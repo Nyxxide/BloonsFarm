@@ -1,5 +1,0 @@
-# ninja log v6
-5	6263	1727004807174006183	CMakeFiles/BloonsAutoFarm.dir/src/CoordinateHandler.cpp.o	26e9bf46d2a6af81
-6998	7705	1727004814166964604	BloonsAutoFarm	52bd91ec4c0751c4
-4	6998	1727004807173006189	CMakeFiles/BloonsAutoFarm.dir/src/main.cpp.o	d218c9e6aec49a82
-2	185	1727050162052248764	build.ninja	fd736081bbd52dc0
