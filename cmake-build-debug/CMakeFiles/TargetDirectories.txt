@@ -1,0 +1,3 @@
+/home/nyx/Desktop/BloonsFarm++/cmake-build-debug/CMakeFiles/BloonsAutoFarm.dir
+/home/nyx/Desktop/BloonsFarm++/cmake-build-debug/CMakeFiles/edit_cache.dir
+/home/nyx/Desktop/BloonsFarm++/cmake-build-debug/CMakeFiles/rebuild_cache.dir
