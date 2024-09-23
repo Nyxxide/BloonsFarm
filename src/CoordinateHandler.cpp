@@ -69,8 +69,8 @@ std::string CoordinateHandler::nameConversion(char hotkey) {
 void CoordinateHandler::gen(std::map<std::string, int> towerData, std::map<std::string, std::string> menuNavData,
                                    std::string) {
 
-//    QSize size = qApp->screens()[0]->size();
-//    std::cout << size.height();
-//    std::cout << "\n";
-//    std::cout << size.width();
+    QSize size = qApp->screens()[0]->size();
+    std::cout << size.height();
+    std::cout << "\n";
+    std::cout << size.width();
 }

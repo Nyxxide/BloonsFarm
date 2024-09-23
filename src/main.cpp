@@ -11,16 +11,21 @@
 using namespace std;
 using namespace nlohmann;
 
+int genData(){
+    CoordinateHandler::gen(std::map<std::string, int>{}, std::map<std::string, std::string>{}, "hi");
+}
+
 int main(int argc, char *argv[]) {
 
     //TODO: Multithread the bitch to get it working
 
     QApplication app(argc, argv);
 
-    QSize size = qApp->screens()[0]->size();
-    std::cout << size.height();
-    std::cout << "\n";
-    std::cout << size.width();
+
+
+    std::thread t(genData);
+
+    t.join();
 
     QMainWindow mainWindow;
 
@@ -28,8 +33,7 @@ int main(int argc, char *argv[]) {
 
     mainWindow.show();
 
-    CoordinateHandler coordHandler;
-    coordHandler.gen(std::map<std::string, int>{}, std::map<std::string, std::string>{}, "hi");
+
 //    json test = {
 //            {"name", "JoHn"},
 //            {"age", 26},

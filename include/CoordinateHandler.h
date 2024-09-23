@@ -6,8 +6,8 @@
 
 class CoordinateHandler {
 public:
-    std::string nameConversion(char hotkey);
-    void gen(std::map<std::string, int> towerData, std::map<std::string, std::string> menuNavData, std::string);
+    static std::string nameConversion(char hotkey);
+    static void gen(std::map<std::string, int> towerData, std::map<std::string, std::string> menuNavData, std::string);
 };
 
 
