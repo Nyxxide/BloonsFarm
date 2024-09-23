@@ -78,6 +78,10 @@
 # *.iml
 # *.ipr
 
+# Idea
+.idea
+.idea/
+
 # CMake
 cmake-build-*/
 
