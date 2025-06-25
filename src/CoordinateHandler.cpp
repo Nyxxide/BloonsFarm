@@ -1,7 +1,11 @@
 #include "CoordinateHandler.h"
+
 #include <json.hpp>
+
 #include <iostream>
 #include <fstream>
+#include <cmath>
+#include <string>
 
 #include <QRect>
 #include <QApplication>
@@ -66,11 +70,75 @@ std::string CoordinateHandler::nameConversion(char hotkey) {
 
 }
 
-void CoordinateHandler::gen(std::map<std::string, int> towerData, std::map<std::string, std::string> menuNavData,
-                                   std::string) {
-
+void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
     QSize size = qApp->screens()[0]->size();
-    std::cout << size.height();
-    std::cout << "\n";
-    std::cout << size.width();
+    int screenHeight = size.height();
+    int screenWidth = size.width();
+
+    double x_fact = screenWidth/1920;
+    double y_fact = screenHeight/1080;
+    double towerx_fact = x_fact;
+    double towery_fact = y_fact;
+
+    double check = abs(y_fact/x_fact);
+    if(check > 1.3 || check < 0.74){
+        towerx_fact = x_fact*1.1578125;
+        towery_fact = y_fact/1.10925925925;
+    }
+
+    json data = { {"towers" , {}}, {"menuNav", {}} };
+    json counter = {};
+
+    for(const auto& tower : towerData){
+        string hotkey = tower["hotkey"];
+        string towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_pos";
+        if(data["towers"].contains(towerName)){
+            if(!counter.contains(towerName)){
+                counter[towerName] = 2;
+            }
+            else{
+                counter[towerName] += 1;
+            }
+            string towerNum = to_string(counter[towerName]);
+            towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_" + towerNum + "_pos";
+            data["towers"][towerName] = {
+                    {"hotkey", tower["hotkey"]},
+                    {"x", tower["x"]},
+                    {"y", tower["y"]},
+                    {"top", tower["top"]},
+                    {"middle", tower["middle"]},
+                    {"bottom", tower["bottom"]}
+            };
+        }
+        else{
+
+            data["towers"][towerName] = {
+                    {"hotkey", tower["hotkey"]},
+                    {"x", tower["x"]},
+                    {"y", tower["y"]},
+                    {"top", tower["top"]},
+                    {"middle", tower["middle"]},
+                    {"bottom", tower["bottom"]}
+            };
+        }
+    }
+
+    cout << "Test";
+    flush(cout);
+    data["menuNav"] = {
+            {"mapDifficulty", menuNavData["mapDifficulty"]},
+            {"map", menuNavData["map"]},
+            {"difficulty", menuNavData["difficulty"]},
+            {"mode", menuNavData["mode"]}
+    };
+
+    fileName = "Tower Positions/" + fileName + ".json";
+    ofstream outFile(fileName);
+    if(!outFile){
+        cerr << "Can't open file." << endl;
+        return;
+    }
+
+    outFile << data.dump(4);
+    outFile.close();
 }

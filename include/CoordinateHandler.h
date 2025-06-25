@@ -1,13 +1,14 @@
-#ifndef BLOONSAUTOFARM_COORDINATEHANDLER_H
-#define BLOONSAUTOFARM_COORDINATEHANDLER_H
+#ifndef BLOONSFARM_COORDINATEHANDLER_H
+#define BLOONSFARM_COORDINATEHANDLER_H
 
 #include <string>
 #include <map>
+#include <json.hpp>
 
 class CoordinateHandler {
 public:
     static std::string nameConversion(char hotkey);
-    static void gen(std::map<std::string, int> towerData, std::map<std::string, std::string> menuNavData, std::string);
+    static void gen(nlohmann::json towerData, nlohmann::json menuNavData, std::string);
 };
 
 
