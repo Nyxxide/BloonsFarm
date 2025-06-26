@@ -16,18 +16,16 @@ BloonsUIMain::BloonsUIMain(){
     // Setup and show the main window (Defaults Full Screen)
     this->setWindowTitle("BloonsFarm++");
     this->setGeometry(550, 250, 800, 600);
-    this->setWindowIcon(QIcon("../resources/UI/btdfarmicon.ico"));
+    this->setWindowIcon(QIcon(":/resources/UI/btdfarmicon.ico"));
     auto *window = new QWidget();
     auto *layout = new QVBoxLayout();
     auto *mainhboxtop = new QHBoxLayout();
     vector<QHBoxLayout*> mainhboxbotrows;
     auto *runninghbox = new QHBoxLayout();
     auto *runningvbox = new QVBoxLayout();
-    auto *runninglabelhbox = new QHBoxLayout();
-    auto *runningbuttonhbox = new QHBoxLayout();
 
     // Font setup
-    auto font_id = QFontDatabase::addApplicationFont("../resources/UI/LuckiestGuy-Regular.ttf");
+    auto font_id = QFontDatabase::addApplicationFont(":/resources/UI/LuckiestGuy-Regular.ttf");
     auto font_name = QFontDatabase::applicationFontFamilies(font_id)[0];
     auto BTDFont = QFont(font_name);
 
@@ -59,7 +57,7 @@ BloonsUIMain::BloonsUIMain(){
                 QString temp = QString::fromStdString(fixedName);
                 auto *editcoords_action = new QAction(temp);
                 editmenu->addAction(editcoords_action);
-                connect(editcoords_action, &QAction::triggered, this, &BloonsUIMain::editcoords);
+                connect(editcoords_action, &QAction::triggered, this, &BloonsUIMain::editCoords);
             }
         }
     }
@@ -92,7 +90,7 @@ BloonsUIMain::BloonsUIMain(){
                 BTDFont.setPointSize(20);
                 startloopbutton->setFont(BTDFont);
                 setMaxFontSize(startloopbutton, 20);
-                connect(startloopbutton, &QPushButton::clicked, this, &BloonsUIMain::startloop);
+                connect(startloopbutton, &QPushButton::clicked, this, &BloonsUIMain::startLoop);
                 mainhboxbotrows[buttonrow]->addWidget(startloopbutton);
                 farmButtonList.push_back(startloopbutton);
                 buttonnum += 1;
@@ -110,7 +108,7 @@ BloonsUIMain::BloonsUIMain(){
     BTDFont.setPointSize(20);
     quitButton->setFont(BTDFont);
     quitButton->setFixedSize(200, 100);
-    connect(quitButton, &QPushButton::clicked, this, &BloonsUIMain::endloop);
+    connect(quitButton, &QPushButton::clicked, this, &BloonsUIMain::endLoop);
 
     // Add Widgets and setup layout of main UI
     mainhboxtop->addWidget(mainLabel);
@@ -136,7 +134,7 @@ BloonsUIMain::BloonsUIMain(){
 };
 
 // Function to edit tower coordinates
-void BloonsUIMain::editcoords() {
+void BloonsUIMain::editCoords() {
     QObject *sender = QObject::sender();
     QAction *action = qobject_cast<QAction*>(sender);
     if(action){
@@ -185,20 +183,240 @@ void BloonsUIMain::setMaxFontSize(QPushButton* button, double maxFontSizePt) {
     button->setFont(font);
 }
 
-void BloonsUIMain::startloop() {
+void BloonsUIMain::menuNav(string fileName) {
+    // 1. Load JSON
+    std::ifstream f("Tower Positions/" + fileName + ".json");
+    if (!f) { std::cerr << "Cannot open JSON\n"; return; }
+    json data = json::parse(f);
+
+    const auto& nv  = data["menuNav"];
+    const std::string mapDifficulty = nv["mapDifficulty"];
+    const std::string map           = nv["map"];
+    const std::string difficulty    = nv["difficulty"];
+    const std::string mode          = nv["mode"];
+
+    QString mapPath = QString(QString::fromStdString(":/resources/Maps/" + map + ".png"));
+    QString mapDiffpath = QString(QString::fromStdString(":/resources/MapDifficulty/" + mapDifficulty + ".png"));
+    QString diffPath= QString(QString::fromStdString(":/resources/Difficulty/" + difficulty + ".png"));
+    QString modePath = QString(QString::fromStdString(":/resources/Mode/" + mode + ".png"));
+
+    // 2. Attempt to locate map on screen
+    auto mapMatch = waitForTemplate(mapPath, 0.9, 3, 50, &running);
+    cout << "Checking for map on screen" << endl;
+    if(!running) return;
+
+    // 3. If not visible, look for difficulty
+    if (!mapMatch){
+        while(running){
+            auto mapDiffMatch = waitForTemplate(mapDiffpath, 0.9, 5, 0, &running);
+            if(!running) return;
+            clickCenter(mapDiffMatch->bbox);
+            mapMatch = waitForTemplate(mapPath, 0.9, 5, 50);
+            if(mapMatch) break;
+            cout << "Attempting to find map difficulty." << endl;
+        }
+    }
+    if(!running) return;
+
+    // 4. Click Map
+    clickCenter(mapMatch->bbox, 20);
+    cout << "Found Map" << endl;
+    if(!running) return;
+
+    // 5. Locate and Click Difficulty
+    auto diffMatch = waitForTemplate(diffPath, 0.7, -1, 0, &running);
+    if(!running) return;
+    clickCenter(diffMatch->bbox);
+    if(!running) return;
+    cout << "Found Difficulty" << endl;
+
+
+    // 6. Locate and Click Difficulty
+    auto modeMatch = waitForTemplate(modePath, 0.7, -1, 0, &running);
+    if(!running) return;
+    clickCenter(modeMatch->bbox);
+    cout << "Found Mode" << endl;
+}
+
+void BloonsUIMain::towerPlacement(string fileName) {
+    // load JSON
+    std::ifstream in("Tower Positions/" + fileName + ".json");
+    if (!in) { qWarning("Cannot open JSON file"); return; }
+
+    nlohmann::json j;
+    in >> j;
+
+    // Loop through towers
+    for (auto& [towerName, node] : j["towers"].items())
+    {
+        char hotkey  = node["hotkey"].get<std::string>()[0];
+        int  x       = node["x"];
+        int  y       = node["y"];
+        int  top     = node["top"];
+        int  middle  = node["middle"];
+        int  bottom  = node["bottom"];
+
+        clickAt(x, y);
+        msleep(250);
+
+        pressChar(hotkey);
+        msleep(250);
+
+        clickAt(x, y);
+        msleep(250);
+        clickAt(x, y);
+
+        for (int i = 0; i < top;    ++i) { msleep(250); pressSpecial(","); }
+        for (int i = 0; i < middle; ++i) {  msleep(250); pressSpecial("."); }
+        for (int i = 0; i < bottom; ++i) { msleep(250); pressSpecial("/"); }
+
+        msleep(250);
+    }
+}
+
+void BloonsUIMain::farmLoop() {
+
+
+
+    auto findAndClick = [this](const QString& resPath,
+                               double thresh,
+                               int    maxTries = -1,
+                               int    delayMs  = 50,
+                               int    yOffset  = 0) -> void
+    {
+        auto m = waitForTemplate(resPath, thresh, maxTries, delayMs, &running);
+        clickCenter(m->bbox, yOffset);
+    };
+
+    while(running){
+        // 1. Home menu
+        findAndClick(":/resources/MenuNav/homemenu.png", 0.9);
+        cout << "We Home Menu" << endl;
+
+        // 2. Navigate Map Menus
+        menuNav(activeFile);
+        if(!running) break;
+        cout << "We Menu Nav" << endl;
+
+        // 3. Look for pre-existing game
+        if(waitForTemplate(":/resources/MenuNav/existinggame.png", 0.9, 2, 50, &running)){
+            findAndClick(":/resources/MenuNav/existinggameok.png", 0.7, -1, 0);
+        }
+        cout << "We PreExisting Game" << endl;
+
+        // 4. Wait for in game HUD
+        waitForTemplate(":/resource/MenuNav/ingame.png", 0.9, -1, 0, &running);
+        cout << "We Find In Game HUD" << endl;
+
+        // 5. Tooltip suppression
+        if (waitForTemplate(":/resources/MenuNav/deflationtooltip.png", 0.90, 5, 50, &running)){
+            cout << "We find tooltip" << endl;
+            findAndClick(":/resources/MenuNav/tooltipok.png", 0.70, -1, 0);
+        }
+        cout << "We Tooltip Menu" << endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(500));
+
+        // 6. Tower Placement
+        towerPlacement(activeFile);
+        if (!running) break;
+        cout << "We Place Towers" << endl;
+
+        // 7. Start Round
+        pressSpecial("space");
+        std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        pressSpecial("space");
+        pressSpecial("esc");
+        cout << "We Start Round" << endl;
+
+        // 8. Wait for Game End or Level-up Interrupt
+        while (running)
+        {
+            // Game End
+            auto endBtn = waitForTemplate(":/resources/MenuNav/endnext.png", 0.90, 1, 50, &running);
+            if (endBtn) {
+                clickCenter(endBtn->bbox);
+                cout << "We End Game" << endl;
+                break;
+            }
+            // Level-up Interrupt
+            if (auto lvl = waitForTemplate(":/resources/MenuNav/levelup.png", 0.90, 1, 0, &running))
+            {   clickCenter(lvl->bbox); clickCenter(lvl->bbox); }
+        }
+        if (!running) break;
+
+        // 9. Go Home
+        findAndClick(":/resources/MenuNav/endhome.png", 0.90);
+        cout << "We Go Home" << endl;
+
+        // 10. Collection Event Watch
+        auto coll = waitForTemplate(":/resources/MenuNav/collectionevent.png", 0.90, 10, 50, &running);
+        if (coll && running)
+        {
+            cout << "We Collection Menu" << endl;
+            clickCenter(coll->bbox);
+            findAndClick(":/resources/MenuNav/instamonkey.png", 0.70);
+            cout << "We InstaMonkey" << endl;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+            clickCenter(coll->bbox);   // confirm once
+            std::this_thread::sleep_for(std::chrono::milliseconds(800));
+
+            while (running)
+            {
+                findAndClick(":/resources/MenuNav/endcollection.png", 0.90, 5, 50);
+                auto insta = waitForTemplate(":/resources/MenuNav/instamonkey.png", 0.70, 5, 50, &running);
+                cout << "We InstaMonkeyLoop" << endl;
+                clickCenter(insta->bbox);
+                std::this_thread::sleep_for(std::chrono::milliseconds(800));
+                clickCenter(insta->bbox);
+                std::this_thread::sleep_for(std::chrono::milliseconds(800));
+            }
+            cout << "We End Collection" << endl;
+
+            findAndClick(":/resources/MenuNav/collectionback.png", 0.90);
+            cout << "We collection back" << endl;
+
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
+    }
+
+}
+
+void BloonsUIMain::startLoop() {
     for(const auto& button : farmButtonList){
         button->hide();
     }
     mainLabel->hide();
     activeLabel->show();
     quitButton->show();
+    QObject *sender = QObject::sender();
+    QPushButton *button = qobject_cast<QPushButton*>(sender);
+    if(button){
+        QString buttonmsg = button->text();
+        string buttonText = buttonmsg.toStdString();
+        activeLabel->setText(QString::fromStdString("Program is currently running " + buttonText + " farm"));
+        activeFile = replaceChar(buttonText, ' ', '_');
+        transform(activeFile.begin(), activeFile.end(), activeFile.begin(), ::tolower);
+    }
+
+    running = true;
+
+    loopThread = std::thread([this] {farmLoop();});
 }
 
-void BloonsUIMain::endloop() {
+void BloonsUIMain::endLoop() {
+    running = false;
+
+    if (loopThread.joinable()) {
+        loopThread.join();
+    }
+
     for(const auto& button : farmButtonList){
         button->show();
     }
     mainLabel->show();
     activeLabel->hide();
     quitButton->hide();
+    activeLabel->setText(QString::fromStdString(""));
+    activeFile = "";
 }

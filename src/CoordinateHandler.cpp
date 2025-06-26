@@ -7,14 +7,82 @@
 #include <cmath>
 #include <string>
 
-#include <QRect>
-#include <QApplication>
-#include <QScreen>
 #include <QGuiApplication>
+
+#include <cstdint>
+
+#ifdef _WIN32                         // ───── Windows ───────────────────────
+#define WIN32_LEAN_AND_MEAN
+    #include <windows.h>
+
+#elif defined(__APPLE__)              // ───── macOS ─────────────────────────
+#include <CoreGraphics/CoreGraphics.h>
+
+#elif defined(__linux__)              // ───── Linux (X11 + Xrandr) ─────────
+#include <X11/Xlib.h>
+#include <X11/extensions/Xrandr.h>
+#endif
 
 using namespace std;
 using namespace nlohmann;
 
+constexpr int BASE_WIDTH = 1920;
+constexpr int BASE_HEIGHT = 1080;
+
+// Returns scaled (x, y) coordinate on target screen size
+std::pair<int, int> scaleCoords(int x, int y, int targetWidth, int targetHeight) {
+    double scaleX = static_cast<double>(targetWidth) / BASE_WIDTH;
+    double scaleY = static_cast<double>(targetHeight) / BASE_HEIGHT;
+
+    int newX = static_cast<int>(x * scaleX);
+    int newY = static_cast<int>(y * scaleY);
+    return {newX, newY};
+}
+
+int getScreenResolution(int& width, int& height)
+{
+#ifdef _WIN32
+    width  = ::GetSystemMetrics(SM_CXSCREEN);
+    height = ::GetSystemMetrics(SM_CYSCREEN);
+    return 0;
+
+#elif defined(__APPLE__)
+    width  = static_cast<int>(CGDisplayPixelsWide(CGMainDisplayID()));
+    height = static_cast<int>(CGDisplayPixelsHigh(CGMainDisplayID()));
+    return 0;
+
+#elif defined(__linux__)
+    Display* dpy = XOpenDisplay(nullptr);
+    if (!dpy) return -1;
+
+    Window root = DefaultRootWindow(dpy);
+    XRRScreenResources* res = XRRGetScreenResources(dpy, root);
+    if (!res) { XCloseDisplay(dpy); return -1; }
+
+    // Take first connected output / CRTC
+    for (int i = 0; i < res->noutput; ++i) {
+        XRROutputInfo* out = XRRGetOutputInfo(dpy, res, res->outputs[i]);
+        if (out && out->connection == RR_Connected && out->crtc != 0) {
+            XRRCrtcInfo* crtc = XRRGetCrtcInfo(dpy, res, out->crtc);
+            if (crtc) {
+                width  = crtc->width;
+                height = crtc->height;
+                XRRFreeCrtcInfo(crtc);
+                XRRFreeOutputInfo(out);
+                XRRFreeScreenResources(res);
+                XCloseDisplay(dpy);
+                return 0;
+            }
+            XRRFreeOutputInfo(out);
+        }
+    }
+    XRRFreeScreenResources(res);
+    XCloseDisplay(dpy);
+    return -1;
+#else
+    return -1;   // Unsupported platform
+#endif
+}
 
 std::string CoordinateHandler::nameConversion(char hotkey) {
     switch(hotkey){
@@ -71,20 +139,11 @@ std::string CoordinateHandler::nameConversion(char hotkey) {
 }
 
 void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
-    QSize size = qApp->screens()[0]->size();
-    int screenHeight = size.height();
-    int screenWidth = size.width();
-
-    double x_fact = screenWidth/1920;
-    double y_fact = screenHeight/1080;
-    double towerx_fact = x_fact;
-    double towery_fact = y_fact;
-
-    double check = abs(y_fact/x_fact);
-    if(check > 1.3 || check < 0.74){
-        towerx_fact = x_fact*1.1578125;
-        towery_fact = y_fact/1.10925925925;
-    }
+    int width = 0;
+    int height = 0;
+    cout << getScreenResolution(width, height) << endl;
+    cout << width << endl;
+    cout << height << endl;
 
     json data = { {"towers" , {}}, {"menuNav", {}} };
     json counter = {};
@@ -92,6 +151,7 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
     for(const auto& tower : towerData){
         string hotkey = tower["hotkey"];
         string towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_pos";
+        auto [newx, newy] = scaleCoords(tower["x"].get<double>(), tower["y"].get<double>(), 4096, 2560);
         if(data["towers"].contains(towerName)){
             if(!counter.contains(towerName)){
                 counter[towerName] = 2;
@@ -101,10 +161,11 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
             }
             string towerNum = to_string(counter[towerName]);
             towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_" + towerNum + "_pos";
+
             data["towers"][towerName] = {
                     {"hotkey", tower["hotkey"]},
-                    {"x", tower["x"]},
-                    {"y", tower["y"]},
+                    {"x", newx},
+                    {"y", newy},
                     {"top", tower["top"]},
                     {"middle", tower["middle"]},
                     {"bottom", tower["bottom"]}
@@ -114,8 +175,8 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
 
             data["towers"][towerName] = {
                     {"hotkey", tower["hotkey"]},
-                    {"x", tower["x"]},
-                    {"y", tower["y"]},
+                    {"x", newx},
+                    {"y", newy},
                     {"top", tower["top"]},
                     {"middle", tower["middle"]},
                     {"bottom", tower["bottom"]}
@@ -123,8 +184,6 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
         }
     }
 
-    cout << "Test";
-    flush(cout);
     data["menuNav"] = {
             {"mapDifficulty", menuNavData["mapDifficulty"]},
             {"map", menuNavData["map"]},

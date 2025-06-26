@@ -57,7 +57,7 @@ BloonsUICoords::BloonsUICoords(std::string name, vector<std::string> labels, std
 
     // Window setup
     this->setWindowTitle(QString::fromStdString(title));
-    this->setWindowIcon(QIcon("../resources/UI/btdfarmicon.ico"));
+    this->setWindowIcon(QIcon(":/resources/UI/btdfarmicon.ico"));
     this->setGeometry(550, 250, 400, 300);
     this->setWindowModality(Qt::WindowModality::ApplicationModal);
 
@@ -70,7 +70,7 @@ BloonsUICoords::BloonsUICoords(std::string name, vector<std::string> labels, std
     auto *labelvbox = new QVBoxLayout();
 
     // Font setup
-    auto font_id = QFontDatabase::addApplicationFont("../resources/UI/LuckiestGuy-Regular.ttf");
+    auto font_id = QFontDatabase::addApplicationFont(":/resources/UI/LuckiestGuy-Regular.ttf");
     auto font_name = QFontDatabase::applicationFontFamilies(font_id)[0];
     auto BTDFont = QFont(font_name);
 

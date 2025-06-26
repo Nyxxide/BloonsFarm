@@ -10,6 +10,7 @@
 #include <filesystem>
 #include <thread>
 #include <vector>
+#include <atomic>
 
 #include <QPushButton>
 #include <QScreen>
@@ -25,6 +26,7 @@
 #include "BloonsUICoords.h"
 #include "CommonGlobals.h"
 #include "CoordinateHandler.h"
+#include "InputHelpers.h"
 
 class BloonsUIMain : public QMainWindow{
 private:
@@ -32,17 +34,36 @@ private:
     QPushButton* quitButton;
     QLabel* mainLabel;
     QLabel* activeLabel;
+    string activeFile;
+
+    std::thread loopThread;
+    std::atomic_bool running{false};
+    bool abort() const {return !running.load();}
 
 public:
+    // NOTES:
+    // Deflation, Half Cash, Impoppable, CHIMPS all have tooltips
+    // Apopalypse has one giant tooltip
+    // Get images for each tooltip as well as saved game
+    // Get new image for expert/(advanced/intermediate/beginner)?
+
+    // For collection event, endhome->wait 5 sec->collect->click instamonkey->wait 2 sec->loop until no more instamonkey (or until sees continue)->back button
+
     BloonsUIMain();
 
-    void editcoords();
+    void editCoords();
 
     void setMaxFontSize(QPushButton* button, double maxFontSizePt);
 
-    void startloop();
+    void farmLoop();
 
-    void endloop();
+    void towerPlacement(string fileName);
+
+    void menuNav(string fileName);
+
+    void startLoop();
+
+    void endLoop();
 };
 
 #endif

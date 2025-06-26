@@ -3,7 +3,7 @@
 BloonsUIPopup::BloonsUIPopup(const QString &title, const QString &popupMessage) {
     // Window setup
     this->setWindowTitle(title);
-    this->setWindowIcon(QIcon("../resources/UI/btdfarmicon.ico"));
+    this->setWindowIcon(QIcon(":/resources/UI/btdfarmicon.ico"));
     this->setGeometry(550, 250, 300, 100);
     this->setWindowModality(Qt::ApplicationModal);
 
@@ -13,7 +13,7 @@ BloonsUIPopup::BloonsUIPopup(const QString &title, const QString &popupMessage) 
     auto* popupHBox = new QHBoxLayout();
 
     // Font setup
-    auto font_id = QFontDatabase::addApplicationFont("../resources/UI/LuckiestGuy-Regular.ttf");
+    auto font_id = QFontDatabase::addApplicationFont(":/resources/UI/LuckiestGuy-Regular.ttf");
     auto font_name = QFontDatabase::applicationFontFamilies(font_id)[0];
     auto BTDFont = QFont(font_name);
 

@@ -2,14 +2,26 @@
 #define BLOONSFARM_COMMONFUNCTIONS_H
 
 #include "json.hpp"
+#include "opencv2/opencv.hpp"
+#include "ScreenCapture.h"
 
 #include "CoordinateHandler.h"
+#include "TemplateMatch.h"
 
 #include <filesystem>
+#include <optional>
+#include <chrono>
+#include <thread>
+#include <utility>
+
+#include <QFile>
+#include <QByteArray>
+#include <QString>
 
 using namespace nlohmann;
 using namespace std;
 using namespace filesystem;
+
 
 //JSON Object Automated Presets
 inline json deflationTowData = {
@@ -72,6 +84,43 @@ inline int genData(){
         CoordinateHandler::gen(deflation2xTowData, deflation2xMenuNav, "deflation_2x_cash");
     }
     return 1;
+}
+
+// Load images embedded in the object file
+inline cv::Mat loadEmbeddedImage(const QString& path)
+{
+    QFile f(path);                       // e.g. ":/resources/Maps/MonkeyMeadow.png"
+    if (!f.open(QIODevice::ReadOnly))
+        return {};
+    QByteArray bytes = f.readAll();
+    return cv::imdecode(
+            std::vector<uchar>(bytes.begin(), bytes.end()),
+            cv::IMREAD_UNCHANGED);
+}
+
+inline std::optional<Match>
+waitForTemplate(const QString&   resPath,
+                double           threshold,
+                int              maxTries   = 3,   // -1  →  infinite
+                int              delayMs    = 300,
+                const std::atomic_bool* running = nullptr)
+{
+    cv::Mat tpl = loadEmbeddedImage(resPath);
+    if (tpl.empty()) return std::nullopt;
+
+    int tries = 0;
+    while (maxTries < 0 || tries < maxTries)
+    {
+        if (running && !*running) return std::nullopt;   // user aborted
+
+        if (auto m = locateOnScreen(tpl, threshold))
+            return m;
+
+        ++tries;
+        cout << tries << endl;
+        std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
+    }
+    return std::nullopt;      // exhausted tries
 }
 
 #endif
