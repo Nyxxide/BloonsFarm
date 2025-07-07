@@ -2,21 +2,14 @@
 #define BLOONSFARM_SCREENGRABBER_H
 
 #include <opencv2/opencv.hpp>
-#include "ScreenCapture.h"
-#include <mutex>
-#include <atomic>
-#include <thread>
-#include <chrono>
 
-class ScreenGrabber {
+
+class ScreenGrabber
+{
 public:
+    // Returns a BGR 8-bit cv::Mat of the entire primary monitor.
+    // On failure: returns empty Mat.
     static cv::Mat grabScreen();
-
-private:
-    static void init();
-    static std::mutex frameMutex;
-    static cv::Mat lastFrame;
-    static std::once_flag started;
 };
 
 

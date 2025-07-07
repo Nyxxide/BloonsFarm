@@ -2,8 +2,7 @@
 #define BLOONSFARM_COMMONFUNCTIONS_H
 
 #include "json.hpp"
-#include "opencv2/opencv.hpp"
-#include "ScreenCapture.h"
+#include <opencv2/opencv.hpp>
 
 #include "CoordinateHandler.h"
 #include "TemplateMatch.h"
@@ -33,7 +32,7 @@ inline json deflationTowData = {
 inline json deflation2xTowData = {
         {{"hotkey", "z"}, {"x", 1608}, {"y", 501}, {"top", 2}, {"middle", 0}, {"bottom", 5}},
         {{"hotkey", "f"}, {"x", 1551}, {"y", 554}, {"top", 4}, {"middle", 2}, {"bottom", 0}},
-        {{"hotkey", "k"}, {"x", 1581}, {"y", 622}, {"top", 2}, {"middle", 3}, {"bottom", 0}}
+        {{"hotkey", "k"}, {"x", 1584}, {"y", 622}, {"top", 2}, {"middle", 3}, {"bottom", 0}}
 };
 inline json deflationMenuNav = {
         {"mapDifficulty", "expert"}, {"map", "infernal"}, {"difficulty", "easy"}, {"mode", "deflation"}
@@ -117,7 +116,7 @@ waitForTemplate(const QString&   resPath,
             return m;
 
         ++tries;
-        cout << tries << endl;
+//        cout << tries << endl;
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
     }
     return std::nullopt;      // exhausted tries

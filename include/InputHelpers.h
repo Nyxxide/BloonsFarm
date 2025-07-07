@@ -139,6 +139,8 @@ inline void clickCenter(const cv::Rect& bbox, int yOffset = 0)
 {
     int cx = bbox.x + bbox.width  / 2;
     int cy = bbox.y + bbox.height / 2 + yOffset;
+    cout << cx << endl;
+    cout << cy << endl;
     clickAt(cx, cy);
 }
 
