@@ -1,134 +1,50 @@
-//#include <QApplication>
-//#include <QString>
-//#include <opencv4/opencv2/opencv.hpp>
+//
+//// File: scale_demo.cpp
+//// Build:  g++ -std=c++20 -O2 scale_demo.cpp `pkg-config --cflags --libs opencv4`
+//// Run:    ./a.out path/to/template.png
+//// ---------------------------------------------------------------------------
+//
+//#include <opencv2/opencv.hpp>
 //#include <iostream>
+//#include <filesystem>
 //
-//#include "CommonGlobals.h"     // loadEmbeddedImage()
-//#include "ScreenGrabber.h"     // ScreenGrabber::grabScreen()
-//#include "TemplateMatch.h"     // locateOnScreen(), Match
+//constexpr int REF_W = 1920;      // resolution the template was captured on
+//constexpr int REF_H = 1080;
 //
-//void sendMouseMove(int x, int y)
+//int main(int argc, char** argv)
 //{
-//#ifdef _WIN32
-//    // ::SetCursorPos(x, y);
-//#elif defined(__linux__)
-//    // Display* d = XOpenDisplay(nullptr);
-//    // XWarpPointer(d, None, DefaultRootWindow(d), 0,0,0,0, x, y);
-//    // XFlush(d); XCloseDisplay(d);
-//#else
-//    std::cout << "Move mouse to (" << x << ", " << y << ")\n";
-//#endif
-//}
 //
-//int main(int argc, char* argv[])
-//{
-//    QApplication app(argc, argv);                     // for Qt resources
 //
-//    // --- 1. Load template (needle) -------------------------------------------------
-//    const QString resPath = ":/resources/Maps/monkey_meadow.png";
-//    cv::Mat needle = loadEmbeddedImage(resPath);
-//    if (needle.empty()) {
-//        std::cerr << "Failed to load template: " << resPath.toStdString() << "\n";
-//        return 1;
-//    }
-//    cv::imwrite("template_debug.png", needle);
+//    const std::string filename = "/home/nyx/Desktop/collectionevent.png";
+//    cv::Mat src = cv::imread(filename, cv::IMREAD_UNCHANGED);
 //
-//    // --- 2. Grab screen (haystack) -------------------------------------------------
-//    cv::Mat haystack = ScreenGrabber::grabScreen();
-//    if (haystack.empty()) {
-//        std::cerr << "Screen grab failed.\n";
-//        return 1;
-//    }
-//    cv::imwrite("screen_debug.png", haystack);
 //
-//    // --- 3. Template matching ------------------------------------------------------
-//    auto matchOpt = locateOnScreen(needle, 0.7);     // 90 % similarity
-//    if (!matchOpt) {
-//        std::cout << "Template not found on screen.\n";
-//        return 0;
-//    }
-//    const Match& m = *matchOpt;
+//    // --- scale factors ---
+//    double scaleUp   = 2560.0 / REF_W;   // ≈1.333
+//    double scaleDown = 1600.0 / REF_W;   // ≈0.833
 //
-//    // --- 4. Draw bounding box & save ----------------------------------------------
-//    cv::rectangle(haystack,
-//                  m.bbox,
-//                  cv::Scalar(0, 255, 0),              // green
-//                  3);                                 // thickness
-//    cv::imwrite("match_debug.png", haystack);
+//    cv::Mat up, down;
+//    cv::resize(src, up,   cv::Size(), scaleUp,   scaleUp,   cv::INTER_CUBIC);  // nicer upsampling
+//    cv::resize(src, down, cv::Size(), scaleDown, scaleDown, cv::INTER_AREA);   // nicer downsampling
 //
-//    // (Optional) show on-screen windows
-//    cv::imshow("Template", needle);
-//    cv::imshow("Screen", haystack);
-//    cv::waitKey(0);
+//    // --- save files next to original ---
+//    namespace fs = std::filesystem;
+//    fs::path inPath  = fs::absolute(filename);
+//    fs::path outUp   = inPath.parent_path() / (inPath.stem().string() + "_2560x1440" + inPath.extension().string());
+//    fs::path outDown = inPath.parent_path() / (inPath.stem().string() + "_1600x900"   + inPath.extension().string());
 //
-//    // --- 5. Move mouse to centre ---------------------------------------------------
-//    int cx = m.bbox.x + m.bbox.width  / 2;
-//    int cy = m.bbox.y + m.bbox.height / 2;
-//    sendMouseMove(cx, cy);
+//    cv::imwrite(outUp.string(),   up);
+//    cv::imwrite(outDown.string(), down);
 //
-//    std::cout << "Match score = " << m.score
-//              << "   centre = (" << cx << ", " << cy << ")\n";
+//    std::cout << "Written:\n  " << outUp   << "\n  " << outDown << '\n';
+//
+//    // --- on-screen preview (Esc closes) ---
+//    cv::imshow("Original (1920×1080 basis)", src);
+//    cv::imshow("Upscaled → 2560×1440 basis", up);
+//    cv::imshow("Downscaled → 1600×900 basis", down);
+//    while (true) { if (cv::waitKey(30) == 27) break; }   // Esc key
 //    return 0;
 //}
-
-
-//
-//#include <QApplication>
-//#include <QString>
-//#include <opencv4/opencv2/opencv.hpp>
-//#include <iostream>
-//
-//#include "CommonGlobals.h"     // loadEmbeddedImage()
-//#include "ScreenGrabber.h"     // ScreenGrabber::grabScreen()
-//#include "TemplateMatch.h"     // locateOnScreen(), Match
-//
-//#ifdef __linux__
-//#include <X11/Xlib.h>
-//#include <X11/extensions/XTest.h>
-//#endif
-//
-//void sendMouseMove(int x, int y)
-//{
-//#ifdef _WIN32
-//    // ::SetCursorPos(x, y);
-//#elif __linux__
-//     Display* d = XOpenDisplay(nullptr);
-//     XWarpPointer(d, None, DefaultRootWindow(d), 0, 0, 0, 0, x, y);
-//     XFlush(d); XCloseDisplay(d);
-//#else
-//    std::cout << "Move mouse to (" << x << ", " << y << ")\n";
-//#endif
-//}
-//
-//int main(int argc, char* argv[])
-//{
-//    QApplication app(argc, argv);  // enables Qt resource system
-//
-//    // 1. Load embedded image
-//    const QString resPath = ":/resources/MapDifficulty/expert.png";
-//    cv::Mat needle = loadEmbeddedImage(resPath);
-//    if (needle.empty()) {
-//        std::cerr << "Failed to load template from " << resPath.toStdString() << "\n";
-//        return 1;
-//    }
-//
-//    // 2. Screen capture and locate image
-//    auto matchOpt = locateOnScreen(needle, 0.9);  // 90% similarity threshold
-//    if (!matchOpt) {
-//        std::cout << "Template not found on screen.\n";
-//        return 0;
-//    }
-//
-//    const Match& m = *matchOpt;
-//    int centerX = m.bbox.x + m.bbox.width / 2;
-//    int centerY = m.bbox.y + m.bbox.height / 2;
-//    sendMouseMove(centerX, centerY);
-//
-//    std::cout << "Found at (" << centerX << ", " << centerY << "), score = " << m.score << "\n";
-//    return 0;
-//}
-
-
 
 
 
@@ -144,16 +60,6 @@ int main(int argc, char *argv[]) {
     auto BloonsUI = BloonsUIMain();
 
     return MainUI.exec();
-
-//    QApplication app(argc, argv);
-//
-//    std::thread t(genData);
-//    t.join();
-//
-//
-//    QMainWindow mainWindow;
-//    mainWindow.resize(qApp->screens()[0]->size().width(), qApp->screens()[0]->size().height());
-//    mainWindow.show();
 
 
 };

@@ -385,9 +385,13 @@ void BloonsUIMain::farmLoop() {
             clickCenter(coll->bbox);   // confirm once
             std::this_thread::sleep_for(std::chrono::milliseconds(800));
 
+
             while (running)
             {
-                if (auto endcollection = waitForTemplate(":/resources/MenuNav/endcollection.png", 0.90, 5, 250)) break;
+                if (auto endcollection = waitForTemplate(":/resources/MenuNav/endcollection.png", 0.90, 5, 250)) {
+                    clickCenter(endcollection->bbox);
+                    break;
+                }
                 auto insta = waitForTemplate(":/resources/MenuNav/instamonkey.png", 0.70, 5, 250, &running);
                 cout << "We InstaMonkeyLoop" << endl;
                 clickCenter(insta->bbox);

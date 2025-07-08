@@ -3,10 +3,12 @@ project(BloonsFarm++)
 
 set(CMAKE_CXX_STANDARD 20)
 
+add_compile_options(-march=native)
+
 # --------------------------------------------------
 # ❶ Find OpenCV
 # --------------------------------------------------
-find_package(OpenCV REQUIRED)
+# find_package(OpenCV REQUIRED)
 
 # --------------------------------------------------
 # ❷ Include directories
@@ -15,7 +17,7 @@ include_directories(
 include
 libs/jsonParser
 ${CMAKE_SOURCE_DIR}/libs/libuiohook/include
-${OpenCV_INCLUDE_DIRS}
+#${OpenCV_INCLUDE_DIRS}
 )
 
 # --------------------------------------------------
@@ -89,7 +91,65 @@ endif()
 # --------------------------------------------------
 # ❼ Link OpenCV last
 # --------------------------------------------------
-target_link_libraries(BloonsFarm++ PRIVATE ${OpenCV_LIBS})
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
+set(BUILD_opencv_world ON CACHE BOOL "Build single static lib" FORCE)
+set(BUILD_TESTS OFF CACHE BOOL "Disable tests" FORCE)
+set(BUILD_PERF_TESTS OFF CACHE BOOL "Disable performance tests" FORCE)
+set(BUILD_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
+set(BUILD_opencv_python OFF CACHE BOOL "Disable python shit" FORCE)
+
+set(WITH_TBB ON CACHE BOOL "Enable TBB parallelism" FORCE)
+set(WITH_OPENMP ON CACHE BOOL "Enable OpenMP" FORCE)
+set(WITH_OPENCL ON CACHE BOOL "Enable OpenCL" FORCE)
+set(WITH_EIGEN ON CACHE BOOL "Use Eigen for matrix ops" FORCE)
+
+set(ENABLE_FAST_MATH ON CACHE BOOL "Use fast math" FORCE)
+set(ENABLE_AVX ON CACHE BOOL "Enable AVX" FORCE)
+set(ENABLE_SSE ON CACHE BOOL "Enable SSE" FORCE)
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+
+# Disable IPP (causes errors)
+set(WITH_IPP OFF CACHE BOOL "Disable IPP" FORCE)
+set(WITH_ITT OFF CACHE BOOL "Disable ITT" FORCE)
+set(WITH_IPP_A OFF CACHE BOOL "Disable IPP Async" FORCE)
+
+
+add_subdirectory(vendor/opencv ${CMAKE_BINARY_DIR}/vendor/opencv-build)
+include_directories(vendor/opencv/include)
+set(OpenCV_STATIC ON)
+
+target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world)
+#target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE vendor/opencv/include)
+#target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE /home/nyx/Desktop/Github/BloonsFarm++/cmake-build-debug/opencv2)
+target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
+        ${CMAKE_BINARY_DIR}/vendor/opencv
+        vendor/opencv/modules/calib3d/include
+        vendor/opencv/modules/core/include
+        vendor/opencv/modules/dnn/include
+        vendor/opencv/modules/features2d/include
+        vendor/opencv/modules/flann/include
+        vendor/opencv/modules/gapi/include
+        vendor/opencv/modules/highgui/include
+        vendor/opencv/modules/imgcodecs/include
+        vendor/opencv/modules/imgproc/include
+        vendor/opencv/modules/java/include
+        vendor/opencv/modules/js/include
+        vendor/opencv/modules/ml/include
+        vendor/opencv/modules/objc/include
+        vendor/opencv/modules/objdetect/include
+        vendor/opencv/modules/photo/include
+        vendor/opencv/modules/python/include
+        vendor/opencv/modules/stitching/include
+        vendor/opencv/modules/ts/include
+        vendor/opencv/modules/video/include
+        vendor/opencv/modules/videoio/include
+        vendor/opencv/modules/world/include
+)
+
+
+include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
 # Optional: put binary in /build
 set_target_properties(BloonsFarm++ PROPERTIES
