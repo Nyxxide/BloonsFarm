@@ -151,7 +151,7 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
     for(const auto& tower : towerData){
         string hotkey = tower["hotkey"];
         string towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_pos";
-        auto [newx, newy] = scaleCoords(tower["x"].get<double>(), tower["y"].get<double>(), 4096, 2560);
+        auto [newx, newy] = scaleCoords(tower["x"].get<double>(), tower["y"].get<double>(), width, height);
         if(data["towers"].contains(towerName)){
             if(!counter.contains(towerName)){
                 counter[towerName] = 2;
