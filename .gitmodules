@@ -1,3 +1,6 @@
 [submodule "vendor/opencv"]
 	path = vendor/opencv
 	url = https://github.com/opencv/opencv.git
+[submodule "vendor/libuiohook"]
+	path = vendor/libuiohook
+	url = https://github.com/kwhat/libuiohook

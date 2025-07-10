@@ -8,16 +8,14 @@ add_compile_options(-march=native)
 # --------------------------------------------------
 # ❶ Find OpenCV
 # --------------------------------------------------
-# find_package(OpenCV REQUIRED)
 
 # --------------------------------------------------
 # ❷ Include directories
 # --------------------------------------------------
 include_directories(
 include
-libs/jsonParser
-${CMAKE_SOURCE_DIR}/libs/libuiohook/include
-#${OpenCV_INCLUDE_DIRS}
+include/jsonParser
+
 )
 
 # --------------------------------------------------
@@ -65,26 +63,28 @@ set_source_files_properties(${GENERATED_QRC} PROPERTIES GENERATED TRUE)
 qt_add_resources(EMBEDDED_RES "${GENERATED_QRC}")
 
 # Make the exe use that generated .cpp
-target_sources(BloonsFarm++ PRIVATE ${EMBEDDED_RES})
+target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EMBEDDED_RES})
+
 
 # --------------------------------------------------
-# ❺ libuiohook (per platform)
+# ❺ libuiohook connection
 # --------------------------------------------------
+add_subdirectory(vendor/libuiohook)
+include_directories(vendor/libuiohook/include)
+
 if (WIN32)
-target_link_libraries(BloonsFarm++ PRIVATE
-${CMAKE_SOURCE_DIR}/libs/libuiohook/lib/uiohook.lib
-)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE uiohook)
 elseif (APPLE)
-target_link_libraries(BloonsFarm++ PRIVATE
-${CMAKE_SOURCE_DIR}/libs/libuiohook/lib/libuiohook.a
-"-framework CoreFoundation"
-"-framework CoreGraphics"
-)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+    uiohook
+    "-framework CoreFoundation"
+    "-framework CoreGraphics"
+    )
 elseif (UNIX)
-target_link_libraries(BloonsFarm++ PRIVATE
-${CMAKE_SOURCE_DIR}/libs/libuiohook/lib/libuiohook.a
-X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
-)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+    uiohook
+    X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
+    )
 endif()
 
 
@@ -121,8 +121,6 @@ include_directories(vendor/opencv/include)
 set(OpenCV_STATIC ON)
 
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world)
-#target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE vendor/opencv/include)
-#target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE /home/nyx/Desktop/Github/BloonsFarm++/cmake-build-debug/opencv2)
 target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         ${CMAKE_BINARY_DIR}/vendor/opencv
         vendor/opencv/modules/calib3d/include
@@ -152,7 +150,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
 # Optional: put binary in /build
-set_target_properties(BloonsFarm++ PROPERTIES
+set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
 

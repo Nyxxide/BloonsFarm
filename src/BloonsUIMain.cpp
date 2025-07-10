@@ -218,7 +218,7 @@ void BloonsUIMain::menuNav(string fileName) {
     QString modePath = QString(QString::fromStdString(":/resources/Mode/" + mode + ".png"));
 
     // 2. Attempt to locate map on screen
-    auto mapMatch = waitForTemplate(mapPath, 0.9, 3, 50, &running);
+    auto mapMatch = waitForTemplate(mapPath, 0.7, 3, 250, &running);
     cout << "Checking for map on screen" << endl;
     if(!running) return;
 
@@ -230,7 +230,7 @@ void BloonsUIMain::menuNav(string fileName) {
             if(!running) return;
             if(mapDiffMatch){
                 clickCenter(mapDiffMatch->bbox);
-                mapMatch = waitForTemplate(mapPath, 0.9, 5, 250);
+                mapMatch = waitForTemplate(mapPath, 0.7, 5, 250);
                 if(mapMatch) break;
             }
         }
@@ -243,7 +243,7 @@ void BloonsUIMain::menuNav(string fileName) {
     if(!running) return;
 
     // 5. Locate and Click Difficulty
-    auto diffMatch = waitForTemplate(diffPath, 0.9, -1, 250, &running);
+    auto diffMatch = waitForTemplate(diffPath, 0.7, -1, 250, &running);
     if(!running) return;
     cout << diffMatch->bbox << endl;
     clickCenter(diffMatch->bbox);
@@ -311,7 +311,7 @@ void BloonsUIMain::farmLoop() {
 
     while(running){
         // 1. Home menu
-        findAndClick(":/resources/MenuNav/homemenu.png", 0.9, -1, 250);
+        findAndClick(":/resources/MenuNav/homemenu.png", 0.7, -1, 250);
         cout << "We Home Menu" << endl;
         if(!running) break;
 
@@ -321,17 +321,17 @@ void BloonsUIMain::farmLoop() {
         cout << "We Menu Nav" << endl;
 
         // 3. Look for pre-existing game
-        if(waitForTemplate(":/resources/MenuNav/existinggame.png", 0.9, 2, 250, &running)){
+        if(waitForTemplate(":/resources/MenuNav/existinggame.png", 0.7, 5, 250, &running)){
             findAndClick(":/resources/MenuNav/existinggameok.png", 0.7, -1, 250);
             cout << "We PreExisting Game" << endl;
         }
 
         // 4. Wait for in game HUD
-        waitForTemplate(":/resources/MenuNav/ingame.png", 0.9, -1, 250);
+        waitForTemplate(":/resources/MenuNav/ingame.png", 0.7, -1, 250);
         cout << "We Find In Game HUD" << endl;
 
         // 5. Tooltip suppression
-        if (waitForTemplate(":/resources/MenuNav/deflationtooltip.png", 0.90, 5, 250, &running)){
+        if (waitForTemplate(":/resources/MenuNav/deflationtooltip.png", 0.70, 5, 250, &running)){
             cout << "We Tooltip Menu" << endl;
             findAndClick(":/resources/MenuNav/tooltipok.png", 0.70, -1, 250);
         }
@@ -355,7 +355,7 @@ void BloonsUIMain::farmLoop() {
             // Game End
             cout << "Checking for end\n" << endl;
             printCurrentEST();
-            auto endBtn = waitForTemplate(":/resources/MenuNav/endnext.png", 0.90, 1, 250, &running);
+            auto endBtn = waitForTemplate(":/resources/MenuNav/endnext.png", 0.70, 1, 250, &running);
             if (endBtn) {
                 clickCenter(endBtn->bbox);
                 cout << "We End Game" << endl;
@@ -363,17 +363,17 @@ void BloonsUIMain::farmLoop() {
             }
             // Level-up Interrupt
             cout << "Checking for level\n" << endl;
-            if (auto lvl = waitForTemplate(":/resources/MenuNav/levelup.png", 0.90, 1, 250, &running))
+            if (auto lvl = waitForTemplate(":/resources/MenuNav/levelup.png", 0.70, 1, 250, &running))
             {   clickCenter(lvl->bbox); clickCenter(lvl->bbox); }
         }
         if (!running) break;
 
         // 9. Go Home
-        findAndClick(":/resources/MenuNav/endhome.png", 0.90);
+        findAndClick(":/resources/MenuNav/endhome.png", 0.80);
         cout << "We Go Home" << endl;
 
         // 10. Collection Event Watch
-        auto coll = waitForTemplate(":/resources/MenuNav/collectionevent.png", 0.90, 10, 250, &running);
+        auto coll = waitForTemplate(":/resources/MenuNav/collectionevent.png", 0.70, 10, 250, &running);
         if (coll && running)
         {
             cout << "We Collection Menu" << endl;
@@ -388,7 +388,7 @@ void BloonsUIMain::farmLoop() {
 
             while (running)
             {
-                if (auto endcollection = waitForTemplate(":/resources/MenuNav/endcollection.png", 0.90, 5, 250)) {
+                if (auto endcollection = waitForTemplate(":/resources/MenuNav/endcollection.png", 0.70, 5, 250)) {
                     clickCenter(endcollection->bbox);
                     break;
                 }
@@ -401,7 +401,7 @@ void BloonsUIMain::farmLoop() {
             }
             cout << "We End Collection" << endl;
 
-            findAndClick(":/resources/MenuNav/collectionback.png", 0.90);
+            findAndClick(":/resources/MenuNav/collectionback.png", 0.70);
             cout << "We collection back" << endl;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
