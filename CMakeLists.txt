@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.29)
-project(BloonsFarm++)
+project(BloonsFarm)
 
 set(CMAKE_CXX_STANDARD 20)
 
@@ -36,8 +36,8 @@ include_directories(include)
 # ❹ Qt Setup
 # --------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
-qt_add_executable(BloonsFarm++ ${SOURCES})
-target_link_libraries(BloonsFarm++ PRIVATE Qt6::Widgets)
+qt_add_executable(BloonsFarm ${SOURCES})
+target_link_libraries(BloonsFarm PRIVATE Qt6::Widgets)
 
 # ----  resource auto-generation  ----
 set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources")

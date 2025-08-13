@@ -31,7 +31,7 @@ BloonsUIMain::BloonsUIMain(){
     t.join();
 
     // Setup and show the main window (Defaults Full Screen)
-    this->setWindowTitle("BloonsFarm++");
+    this->setWindowTitle("BloonsFarm");
     this->setGeometry(550, 250, 800, 600);
     this->setWindowIcon(QIcon(":/resources/UI/btdfarmicon.ico"));
     auto *window = new QWidget();

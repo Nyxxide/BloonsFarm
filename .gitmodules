@@ -4,3 +4,6 @@
 [submodule "vendor/libuiohook"]
 	path = vendor/libuiohook
 	url = https://github.com/kwhat/libuiohook
+[submodule "vendor/qt"]
+	path = vendor/qt
+	url = https://code.qt.io/qt/qt5.git
