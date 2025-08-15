@@ -24,12 +24,13 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
-    # Run all OSs on tag push; on manual run, filter by inputs.os
-    if: ${{ github.event_name != 'workflow_dispatch' ||
-      inputs.os == '' ||
-      (inputs.os == 'linux'   && matrix.os == 'ubuntu-24.04') ||
-      (inputs.os == 'windows' && matrix.os == 'windows-2022') ||
-      (inputs.os == 'macos'   && matrix.os == 'macos-14') }}
+    # Run all on tag pushes; on manual run, filter by input
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.os == '' ||
+      (github.event.inputs.os == 'linux'   && contains(matrix.os, 'ubuntu')) ||
+      (github.event.inputs.os == 'windows' && contains(matrix.os, 'windows')) ||
+      (github.event.inputs.os == 'macos'   && contains(matrix.os, 'macos'))
 
     steps:
       - name: Checkout (with submodules)
@@ -117,11 +118,12 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
     # Same filtering logic as the qt job
-    if: ${{ github.event_name != 'workflow_dispatch' ||
-      inputs.os == '' ||
-      (inputs.os == 'linux'   && matrix.os == 'ubuntu-24.04') ||
-      (inputs.os == 'windows' && matrix.os == 'windows-2022') ||
-      (inputs.os == 'macos'   && matrix.os == 'macos-14') }}
+    if: |
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.os == '' ||
+      (github.event.inputs.os == 'linux'   && contains(matrix.os, 'ubuntu')) ||
+      (github.event.inputs.os == 'windows' && contains(matrix.os, 'windows')) ||
+      (github.event.inputs.os == 'macos'   && contains(matrix.os, 'macos'))
 
     steps:
       - name: Checkout (with submodules)
