@@ -54,6 +54,13 @@ jobs:
           # Perl is needed only if you use the Qt super-repo initializer
           choco install strawberryperl -y
 
+      # Ensure MSVC toolchain is active if Qt ever rebuilds on Windows
+      - name: Set up MSVC dev prompt (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Initialize Qt modules (only if using qt super-repo)
         # If vendor/qt/qtbase already exists, this is a no-op.
         shell: bash
@@ -87,11 +94,26 @@ jobs:
         # This just prepares the build tree. Safe even on a cache hit.
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      - name: Build & install Qt (only if cache missed)
-        if: steps.cache-qt.outputs.cache-hit != 'true'
+      # --- Skip Qt rebuild if the installed prefix already exists ---
+      - name: Build & install Qt (Linux/macOS) — only if not already installed
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
-          # Builds and installs static Qt into superbuild/build/_qt
-          cmake --build superbuild/build --target qtbase_static --config Release -j 4
+          if [ -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake ]; then
+            echo "Qt prefix already present — skipping Qt build."
+          else
+            cmake --build superbuild/build --target qtbase_static --config Release -j 4
+          fi
+
+      - name: Build & install Qt (Windows) — only if not already installed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake") {
+            Write-Host "Qt prefix already present — skipping Qt build."
+          } else {
+            cmake --build superbuild/build --target qtbase_static --config Release -j 4
+          }
 
       - name: Validate cached Qt prefix
         run: |
@@ -129,13 +151,24 @@ jobs:
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
-            libxtst-dev
+            libxtst-dev libxkbfile-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja libomp
+          # Use LLVM instead of AppleClang so FindOpenMP works out of the box
+          brew install ninja llvm libomp
+
+      # Use Homebrew LLVM for OpenMP on macOS
+      - name: Use Homebrew LLVM (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          echo "CC=/opt/homebrew/opt/llvm/bin/clang" >> $GITHUB_ENV
+          echo "CXX=/opt/homebrew/opt/llvm/bin/clang++" >> $GITHUB_ENV
+          echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
+          echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
+          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
@@ -183,7 +216,8 @@ jobs:
         run: |
           cmake -S . -B build -G "Ninja Multi-Config" `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
+            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive-"
 
       - name: Build app
         if: runner.os != 'Windows'
