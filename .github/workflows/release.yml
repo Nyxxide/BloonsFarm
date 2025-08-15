@@ -62,7 +62,6 @@ jobs:
           arch: x64
 
       - name: Initialize Qt modules (only if using qt super-repo)
-        # If vendor/qt/qtbase already exists, this is a no-op.
         shell: bash
         run: |
           if [ ! -d "vendor/qt/qtbase" ]; then
@@ -76,7 +75,6 @@ jobs:
           if [ -d vendor/qt/.git ]; then
             QTREF=$(git -C vendor/qt rev-parse --short HEAD)
           else
-            # Fall back if you vendored individual modules
             QTREF=$(git rev-parse --short HEAD)
           fi
           echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
@@ -91,7 +89,6 @@ jobs:
             qt6-static-${{ runner.os }}-
 
       - name: Configure superbuild (Ninja)
-        # This just prepares the build tree. Safe even on a cache hit.
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       # --- Skip Qt rebuild if the installed prefix already exists ---
@@ -151,16 +148,16 @@ jobs:
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
-            libxtst-dev libxkbfile-dev
+            libxtst-dev libxkbfile-dev libxt-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          # Use LLVM instead of AppleClang so FindOpenMP works out of the box
+          # Use LLVM instead of AppleClang so FindOpenMP works
           brew install ninja llvm libomp
 
-      # Use Homebrew LLVM for OpenMP on macOS
+      # Use Homebrew LLVM for OpenMP + make sure OpenCV CPU flags are ARM-safe
       - name: Use Homebrew LLVM (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -208,7 +205,9 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt"
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
+            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
+            -DENABLE_SSE=OFF -DENABLE_AVX=OFF -DCPU_BASELINE=NEON -DCPU_DISPATCH=""
 
       - name: Configure (app-only, Windows)
         if: runner.os == 'Windows'
@@ -217,7 +216,8 @@ jobs:
           cmake -S . -B build -G "Ninja Multi-Config" `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive-"
+            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /D_HAS_STD_BYTE=0 /DNOMINMAX /DWIN32_LEAN_AND_MEAN" `
+            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF
 
       - name: Build app
         if: runner.os != 'Windows'
@@ -234,7 +234,6 @@ jobs:
         run: |
           APP=BloonsFarm++
           mkdir -p out
-          # Binary is emitted to build/ thanks to your RUNTIME_OUTPUT_DIRECTORY
           tar -C build -czf out/${APP}-linux-x86_64.tar.gz ${APP}
 
       - name: Package (macOS)
