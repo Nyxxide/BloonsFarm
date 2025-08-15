@@ -128,19 +128,26 @@ jobs:
             libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
-            libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev
+            libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
+            libxtst-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja
+          brew install ninja libomp
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install ninja -y
+
+      - name: Set up MSVC dev prompt (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
 
       # IMPORTANT: compute qtref BEFORE restoring cache
       - name: Compute Qt commit
