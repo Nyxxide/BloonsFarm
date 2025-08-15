@@ -89,6 +89,7 @@ jobs:
             qt6-static-${{ runner.os }}-
 
       - name: Configure superbuild (Ninja)
+        # This just prepares the build tree. Safe even on a cache hit.
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       # --- Skip Qt rebuild if the installed prefix already exists ---
@@ -157,7 +158,7 @@ jobs:
           # Use LLVM instead of AppleClang so FindOpenMP works
           brew install ninja llvm libomp
 
-      # Use Homebrew LLVM for OpenMP + make sure OpenCV CPU flags are ARM-safe
+      # Use Homebrew LLVM for OpenMP + force ARM-safe OpenCV baseline + skip Python detection
       - name: Use Homebrew LLVM (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -200,14 +201,17 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      - name: Configure (app-only) with cached Qt
+      - name: Configure (app-only) with cached Qt (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DENABLE_SSE=OFF -DENABLE_AVX=OFF -DCPU_BASELINE=NEON -DCPU_DISPATCH=""
+            -DOPENCV_PYTHON_SKIP_DETECTION=ON \
+            -DENABLE_SSE=OFF -DENABLE_AVX=OFF \
+            -DCPU_BASELINE=NEON -DCPU_BASELINE_REQUIRE=NEON -DCPU_DISPATCH="" \
+            -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE=""
 
       - name: Configure (app-only, Windows)
         if: runner.os == 'Windows'
@@ -217,7 +221,8 @@ jobs:
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
             -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /D_HAS_STD_BYTE=0 /DNOMINMAX /DWIN32_LEAN_AND_MEAN" `
-            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF
+            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF `
+            -DENABLE_SSE=OFF -DENABLE_AVX=OFF -DCPU_DISPATCH=""
 
       - name: Build app
         if: runner.os != 'Windows'
@@ -231,20 +236,42 @@ jobs:
       # -------- package per OS --------
       - name: Package (Linux)
         if: runner.os == 'Linux'
+        shell: bash
         run: |
-          APP=BloonsFarm++
+          set -euo pipefail
           mkdir -p out
-          tar -C build -czf out/${APP}-linux-x86_64.tar.gz ${APP}
+          # Try exact name first
+          if [ -f "build/BloonsFarm++" ]; then
+            BIN="build/BloonsFarm++"
+          else
+            # Fall back: search executable by prefix
+            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+          fi
+          if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
+            echo "Could not locate built binary. Contents of build/:"
+            ls -lah build || true
+            exit 1
+          fi
+          echo "Packaging $BIN"
+          tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-linux-x86_64.tar.gz" "$(basename "$BIN")"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
+        shell: bash
         run: |
-          APP=BloonsFarm++
+          set -euo pipefail
           mkdir -p out
-          if [ -d "build/${APP}.app" ]; then
-            /usr/bin/zip -r out/${APP}-macOS.zip "build/${APP}.app"
+          if [ -d "build/BloonsFarm++.app" ]; then
+            /usr/bin/zip -r "out/BloonsFarm++-macOS.zip" "build/BloonsFarm++.app"
           else
-            tar -C build -czf out/${APP}-macOS.tar.gz ${APP}
+            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+            if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
+              echo "Could not locate app bundle or binary. Contents of build/:"
+              ls -lah build || true
+              exit 1
+            fi
+            echo "Packaging $BIN"
+            tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-macOS.tar.gz" "$(basename "$BIN")"
           fi
 
       - name: Package (Windows)
@@ -253,7 +280,14 @@ jobs:
         run: |
           $APP = "BloonsFarm++"
           New-Item -ItemType Directory -Force -Path out | Out-Null
-          Compress-Archive -Path "build\Release\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force
+          if (Test-Path "build\Release\$APP.exe") {
+            Compress-Archive -Path "build\Release\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force
+          } elseif (Test-Path "build\$APP.exe") {
+            Compress-Archive -Path "build\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force
+          } else {
+            Get-ChildItem -Recurse build | Write-Output
+            throw "Could not locate $APP.exe"
+          }
 
       # Upload as build artifacts on manual runs
       - name: Upload build artifacts
