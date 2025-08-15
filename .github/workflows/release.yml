@@ -3,12 +3,7 @@ name: Build & Release (Static Qt)
 on:
   push:
     tags: [ "v*" ]     # create a tag like v1.0.0 to publish a release
-  workflow_dispatch:
-    inputs:
-      os:
-        description: "Run only this OS (linux | windows | macos). Leave empty to run all."
-        required: false
-        default: ""
+  workflow_dispatch:    # manual run (uploads as build artifacts, not a release)
 
 permissions:
   contents: write       # needed for publishing release assets
@@ -24,13 +19,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
-    # Run all on tag pushes; on manual run, filter by input
-    if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.os == '' ||
-      (github.event.inputs.os == 'linux'   && contains(matrix.os, 'ubuntu')) ||
-      (github.event.inputs.os == 'windows' && contains(matrix.os, 'windows')) ||
-      (github.event.inputs.os == 'macos'   && contains(matrix.os, 'macos'))
 
     steps:
       - name: Checkout (with submodules)
@@ -63,10 +51,11 @@ jobs:
         shell: pwsh
         run: |
           choco install ninja -y
-          # Perl only needed if you use the Qt super-repo initializer
+          # Perl is needed only if you use the Qt super-repo initializer
           choco install strawberryperl -y
 
       - name: Initialize Qt modules (only if using qt super-repo)
+        # If vendor/qt/qtbase already exists, this is a no-op.
         shell: bash
         run: |
           if [ ! -d "vendor/qt/qtbase" ]; then
@@ -80,6 +69,7 @@ jobs:
           if [ -d vendor/qt/.git ]; then
             QTREF=$(git -C vendor/qt rev-parse --short HEAD)
           else
+            # Fall back if you vendored individual modules
             QTREF=$(git rev-parse --short HEAD)
           fi
           echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
@@ -94,11 +84,13 @@ jobs:
             qt6-static-${{ runner.os }}-
 
       - name: Configure superbuild (Ninja)
+        # This just prepares the build tree. Safe even on a cache hit.
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
       - name: Build & install Qt (only if cache missed)
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
+          # Builds and installs static Qt into superbuild/build/_qt
           cmake --build superbuild/build --target qtbase_static --config Release -j 4
 
       - name: Validate cached Qt prefix
@@ -117,13 +109,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-2022, macos-14]
-    # Same filtering logic as the qt job
-    if: |
-      github.event_name != 'workflow_dispatch' ||
-      github.event.inputs.os == '' ||
-      (github.event.inputs.os == 'linux'   && contains(matrix.os, 'ubuntu')) ||
-      (github.event.inputs.os == 'windows' && contains(matrix.os, 'windows')) ||
-      (github.event.inputs.os == 'macos'   && contains(matrix.os, 'macos'))
 
     steps:
       - name: Checkout (with submodules)
@@ -157,7 +142,7 @@ jobs:
         run: |
           choco install ninja -y
 
-      # Compute qtref BEFORE restoring cache
+      # IMPORTANT: compute qtref BEFORE restoring cache
       - name: Compute Qt commit
         id: qthash
         shell: bash
@@ -208,6 +193,7 @@ jobs:
         run: |
           APP=BloonsFarm++
           mkdir -p out
+          # Binary is emitted to build/ thanks to your RUNTIME_OUTPUT_DIRECTORY
           tar -C build -czf out/${APP}-linux-x86_64.tar.gz ${APP}
 
       - name: Package (macOS)
