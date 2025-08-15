@@ -278,3 +278,5 @@ CMakeLists.txt.user*
 
 
 # End of https://www.toptal.com/developers/gitignore/api/clion+all,jetbrains+all,c++,cmake,qt,qtcreator
+
+/superbuild/build
