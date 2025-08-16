@@ -51,10 +51,9 @@ jobs:
         shell: pwsh
         run: |
           choco install ninja -y
-          # Perl is needed only if you use the Qt super-repo initializer
+          # Perl only needed if using qt super-repo initializer
           choco install strawberryperl -y
 
-      # Ensure MSVC toolchain is active if Qt ever rebuilds on Windows
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -91,7 +90,7 @@ jobs:
       - name: Configure superbuild (Ninja)
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
-      # --- Skip Qt rebuild if the installed prefix already exists ---
+      # Skip Qt rebuild if prefix already present (cache hit)
       - name: Build & install Qt (Linux/macOS) — only if not already installed
         if: runner.os != 'Windows'
         shell: bash
@@ -154,10 +153,10 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          # Use LLVM instead of AppleClang so FindOpenMP works
           brew install ninja llvm libomp
+          # easiest way to avoid OpenCV's numpy check failing
+          python3 -m pip install --user numpy
 
-      # Use Homebrew LLVM for OpenMP
       - name: Use Homebrew LLVM (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -179,7 +178,7 @@ jobs:
         with:
           arch: x64
 
-      # IMPORTANT: compute qtref BEFORE restoring cache
+      # compute qtref BEFORE restoring cache
       - name: Compute Qt commit
         id: qthash
         shell: bash
@@ -200,7 +199,7 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # -------- Configure per-OS so OpenCV CPU baselines are correct --------
+      # ---------- Configure app ----------
       - name: Configure (app-only) with cached Qt (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -208,83 +207,60 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DENABLE_SSE=ON -DENABLE_SSE2=ON \
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
-            -DCPU_BASELINE=SSE2 -DCPU_BASELINE_REQUIRE=SSE2 -DCPU_DISPATCH=""
+            -DCPU_BASELINE="" -DCPU_DISPATCH=""
 
-      - name: Configure (app-only) with cached Qt (macOS)
+      - name: Configure (app-only) with cached Qt (macOS/arm64)
         if: runner.os == 'macOS'
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DENABLE_NEON=ON \
-            -DENABLE_SSE=OFF -DENABLE_SSE2=OFF -DENABLE_SSE3=OFF -DENABLE_SSSE3=OFF -DENABLE_SSE41=OFF -DENABLE_SSE42=OFF \
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
-            -DCPU_BASELINE=NEON -DCPU_BASELINE_REQUIRE=NEON -DCPU_DISPATCH=""
+            -DCPU_BASELINE=NEON -DCPU_DISPATCH=""
 
-      - name: Configure (app-only, Windows)
+      - name: Configure (app-only, Windows / MSVC)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cmake -S . -B build -G "Ninja Multi-Config" `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /D_HAS_STD_BYTE=0 /DNOMINMAX" `
-            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF `
-            -DENABLE_SSE=ON -DENABLE_SSE2=ON -DENABLE_SSE3=ON -DENABLE_SSSE3=ON -DENABLE_SSE41=ON -DENABLE_SSE42=ON `
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF `
-            -DCPU_DISPATCH=""
+            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /DNOMINMAX /DWIN32_LEAN_AND_MEAN"
 
-      - name: Build app
+      # ---------- Build ----------
+      - name: Build app (Linux/macOS)
         if: runner.os != 'Windows'
         run: cmake --build build -j 4
 
       - name: Build app (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release -j 4
         shell: pwsh
+        run: cmake --build build --config Release -j 4
 
-      # -------- package per OS --------
+      # ---------- Package ----------
       - name: Package (Linux)
         if: runner.os == 'Linux'
-        shell: bash
         run: |
-          set -euo pipefail
           mkdir -p out
-          if [ -f "build/BloonsFarm++" ]; then
-            BIN="build/BloonsFarm++"
-          else
-            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
-          fi
-          if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
-            echo "Could not locate built binary. Contents of build/:"
-            ls -lah build || true
-            exit 1
-          fi
-          echo "Packaging $BIN"
-          tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-linux-x86_64.tar.gz" "$(basename "$BIN")"
+          BIN="$(find build -maxdepth 1 -type f -perm -111 -name 'BloonsFarm*' | head -n1)"
+          echo "Found binary: $BIN"
+          test -n "$BIN"
+          cp "$BIN" out/
+          tar -C out -czf out/BloonsFarm-linux-x86_64.tar.gz "$(basename "$BIN")"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
-        shell: bash
         run: |
-          set -euo pipefail
           mkdir -p out
-          if [ -d "build/BloonsFarm++.app" ]; then
-            /usr/bin/zip -r "out/BloonsFarm++-macOS.zip" "build/BloonsFarm++.app"
+          APP=BloonsFarm++
+          if [ -d "build/${APP}.app" ]; then
+            /usr/bin/zip -r out/${APP}-macOS.zip "build/${APP}.app"
           else
-            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
-            if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
-              echo "Could not locate app bundle or binary. Contents of build/:"
-              ls -lah build || true
-              exit 1
-            fi
-            echo "Packaging $BIN"
-            tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-macOS.tar.gz" "$(basename "$BIN")"
+            BIN="$(find build -maxdepth 1 -type f -perm -111 -name 'BloonsFarm*' | head -n1)"
+            echo "Found binary: $BIN"
+            test -n "$BIN"
+            cp "$BIN" out/
+            tar -C out -czf out/${APP}-macOS.tar.gz "$(basename "$BIN")"
           fi
 
       - name: Package (Windows)
@@ -298,8 +274,8 @@ jobs:
           } elseif (Test-Path "build\$APP.exe") {
             Compress-Archive -Path "build\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force
           } else {
-            Get-ChildItem -Recurse build | Write-Output
-            throw "Could not locate $APP.exe"
+            Write-Error "Could not locate $APP.exe in build tree."
+            exit 1
           }
 
       # Upload as build artifacts on manual runs
