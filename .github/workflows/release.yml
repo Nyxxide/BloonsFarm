@@ -2,13 +2,16 @@ name: Build & Release (Static Qt)
 
 on:
   push:
-    tags: [ "v*" ]
-  workflow_dispatch:
+    tags: [ "v*" ]     # create a tag like v1.0.0 to publish a release
+  workflow_dispatch:    # manual run (uploads as build artifacts, not a release)
 
 permissions:
-  contents: write
+  contents: write       # needed for publishing release assets
 
 jobs:
+  # ----------------------------
+  # 1) Build static Qt + cache it
+  # ----------------------------
   qt:
     name: Qt static • ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -23,7 +26,6 @@ jobs:
         with:
           submodules: recursive
 
-      # ---------- Linux deps for building Qt ----------
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -38,42 +40,27 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev
 
-      # ---------- macOS toolchain ----------
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          export HOMEBREW_NO_ANALYTICS=1
           brew update
-          brew install ninja llvm libomp python@3.12
-          python3 -m pip install --user --upgrade pip
-          python3 -m pip install --user numpy
+          brew install ninja
 
-      - name: Use Homebrew LLVM (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "CC=/opt/homebrew/opt/llvm/bin/clang" >> $GITHUB_ENV
-          echo "CXX=/opt/homebrew/opt/llvm/bin/clang++" >> $GITHUB_ENV
-          echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
-          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
-          echo "MACOSX_DEPLOYMENT_TARGET=13.0" >> $GITHUB_ENV
-
-      # ---------- Windows toolchain ----------
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           choco install ninja -y
-          choco install strawberryperl -y   # only needed if using qt super-repo init
+          # Perl is needed only if you use the Qt super-repo initializer
+          choco install strawberryperl -y
 
+      # Ensure MSVC toolchain is active if Qt ever rebuilds on Windows
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
-      # ---------- Qt cache key ----------
       - name: Initialize Qt modules (only if using qt super-repo)
         shell: bash
         run: |
@@ -104,6 +91,7 @@ jobs:
       - name: Configure superbuild (Ninja)
         run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
 
+      # --- Skip Qt rebuild if the installed prefix already exists ---
       - name: Build & install Qt (Linux/macOS) — only if not already installed
         if: runner.os != 'Windows'
         shell: bash
@@ -129,6 +117,9 @@ jobs:
           test -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake
           echo "Cached Qt prefix is ready."
 
+  # ----------------------------------------
+  # 2) Build the app using the cached static Qt
+  # ----------------------------------------
   app:
     name: App • ${{ matrix.os }}
     needs: qt
@@ -144,7 +135,6 @@ jobs:
         with:
           submodules: recursive
 
-      # ---------- Linux deps for libuiohook etc ----------
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -160,16 +150,14 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
             libxtst-dev libxkbfile-dev libxt-dev
 
-      # ---------- macOS toolchain for app ----------
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
-          export HOMEBREW_NO_ANALYTICS=1
           brew update
-          brew install ninja llvm libomp python@3.12
-          python3 -m pip install --user --upgrade pip
-          python3 -m pip install --user numpy
+          # Use LLVM instead of AppleClang so FindOpenMP works
+          brew install ninja llvm libomp
 
+      # Use Homebrew LLVM for OpenMP
       - name: Use Homebrew LLVM (macOS)
         if: runner.os == 'macOS'
         run: |
@@ -178,14 +166,12 @@ jobs:
           echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
           echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
           echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
-          echo "SDKROOT=$(xcrun --sdk macosx --show-sdk-path)" >> $GITHUB_ENV
-          echo "MACOSX_DEPLOYMENT_TARGET=13.0" >> $GITHUB_ENV
 
-      # ---------- Windows ----------
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: choco install ninja -y
+        run: |
+          choco install ninja -y
 
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows'
@@ -193,7 +179,7 @@ jobs:
         with:
           arch: x64
 
-      # ---------- Qt cache for app ----------
+      # IMPORTANT: compute qtref BEFORE restoring cache
       - name: Compute Qt commit
         id: qthash
         shell: bash
@@ -214,88 +200,90 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # ---------- Configure per-OS ----------
-      - name: Configure (Linux)
+      # -------- Configure per-OS so OpenCV CPU baselines are correct --------
+      - name: Configure (app-only) with cached Qt (Linux)
         if: runner.os == 'Linux'
         run: |
-          set -eux
           cmake -S . -B build -G Ninja \
-            -UENABLE_SSE -UENABLE_SSE2 -UENABLE_SSE3 -UENABLE_SSSE3 -UENABLE_SSE41 -UENABLE_SSE42 \
-            -UENABLE_AVX -UENABLE_AVX2 -UENABLE_AVX512 \
-            -UCPU_BASELINE -UCPU_BASELINE_REQUIRE -UCPU_DISPATCH \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
             -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DCPU_BASELINE=SSE2 -DCPU_BASELINE_REQUIRE=SSE2 -DCPU_DISPATCH="" \
-          || { echo "----- CMakeError.log -----"; cat build/CMakeFiles/CMakeError.log || true; \
-               echo "----- CMakeOutput.log -----"; cat build/CMakeFiles/CMakeOutput.log || true; exit 1; }
+            -DENABLE_SSE=ON -DENABLE_SSE2=ON \
+            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
+            -DCPU_BASELINE=SSE2 -DCPU_BASELINE_REQUIRE=SSE2 -DCPU_DISPATCH=""
 
-      - name: Configure (macOS arm64)
+      - name: Configure (app-only) with cached Qt (macOS)
         if: runner.os == 'macOS'
         run: |
-          set -eux
           cmake -S . -B build -G Ninja \
-            -UENABLE_SSE -UENABLE_SSE2 -UENABLE_SSE3 -UENABLE_SSSE3 -UENABLE_SSE41 -UENABLE_SSE42 \
-            -UENABLE_AVX -UENABLE_AVX2 -UENABLE_AVX512 \
-            -UCPU_BASELINE -UCPU_BASELINE_REQUIRE -UCPU_DISPATCH \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
-            -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=${MACOSX_DEPLOYMENT_TARGET} \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
             -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DCPU_BASELINE=NEON -DCPU_BASELINE_REQUIRE=NEON -DCPU_DISPATCH="" \
-          || { echo "----- CMakeError.log -----"; cat build/CMakeFiles/CMakeError.log || true; \
-               echo "----- CMakeOutput.log -----"; cat build/CMakeFiles/CMakeOutput.log || true; exit 1; }
+            -DENABLE_NEON=ON \
+            -DENABLE_SSE=OFF -DENABLE_SSE2=OFF -DENABLE_SSE3=OFF -DENABLE_SSSE3=OFF -DENABLE_SSE41=OFF -DENABLE_SSE42=OFF \
+            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
+            -DCPU_BASELINE=NEON -DCPU_BASELINE_REQUIRE=NEON -DCPU_DISPATCH=""
 
-      - name: Configure (Windows / MSVC)
+      - name: Configure (app-only, Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cmake -S . -B build -G "Ninja Multi-Config" `
-            -UENABLE_SSE -UENABLE_SSE2 -UENABLE_SSE3 -UENABLE_SSSE3 -UENABLE_SSE41 -UENABLE_SSE42 `
-            -UENABLE_AVX -UENABLE_AVX2 -UENABLE_AVX512 `
-            -UCPU_BASELINE -UCPU_BASELINE_REQUIRE -UCPU_DISPATCH `
             -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /DNOMINMAX" `
+            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /D_HAS_STD_BYTE=0 /DNOMINMAX" `
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF `
+            -DENABLE_SSE=ON -DENABLE_SSE2=ON -DENABLE_SSE3=ON -DENABLE_SSSE3=ON -DENABLE_SSE41=ON -DENABLE_SSE42=ON `
             -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF `
             -DCPU_DISPATCH=""
 
-      # ---------- Build ----------
-      - name: Build app (Linux/macOS)
+      - name: Build app
         if: runner.os != 'Windows'
         run: cmake --build build -j 4
 
       - name: Build app (Windows)
         if: runner.os == 'Windows'
-        shell: pwsh
         run: cmake --build build --config Release -j 4
+        shell: pwsh
 
-      # ---------- Package ----------
+      # -------- package per OS --------
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
         run: |
-          set -eux
+          set -euo pipefail
           mkdir -p out
-          BIN="$(find build -maxdepth 2 -type f -perm -111 -name 'BloonsFarm*' | head -n1)"
-          test -n "$BIN"
+          if [ -f "build/BloonsFarm++" ]; then
+            BIN="build/BloonsFarm++"
+          else
+            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+          fi
+          if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
+            echo "Could not locate built binary. Contents of build/:"
+            ls -lah build || true
+            exit 1
+          fi
+          echo "Packaging $BIN"
           tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-linux-x86_64.tar.gz" "$(basename "$BIN")"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
         shell: bash
         run: |
-          set -eux
+          set -euo pipefail
           mkdir -p out
           if [ -d "build/BloonsFarm++.app" ]; then
             /usr/bin/zip -r "out/BloonsFarm++-macOS.zip" "build/BloonsFarm++.app"
           else
-            BIN="$(find build -maxdepth 2 -type f -perm -111 -name 'BloonsFarm*' | head -n1)"
-            test -n "$BIN"
+            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+            if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
+              echo "Could not locate app bundle or binary. Contents of build/:"
+              ls -lah build || true
+              exit 1
+            fi
+            echo "Packaging $BIN"
             tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-macOS.tar.gz" "$(basename "$BIN")"
           fi
 
@@ -310,22 +298,24 @@ jobs:
           } elseif (Test-Path "build\$APP.exe") {
             Compress-Archive -Path "build\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force
           } else {
-            Get-ChildItem -Recurse build
+            Get-ChildItem -Recurse build | Write-Output
             throw "Could not locate $APP.exe"
           }
 
-      # ---------- Upload ----------
-      - name: Upload build artifacts (manual runs)
+      # Upload as build artifacts on manual runs
+      - name: Upload build artifacts
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ runner.os }}-binaries
           path: out/*
 
+      # Upload to GitHub Release on tags
       - name: Publish to GitHub Release
-        if: runner.os == 'Linux' && startsWith(github.ref, 'refs/tags/')
+        if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: out/*
+          files: |
+            out/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
