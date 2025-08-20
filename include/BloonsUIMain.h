@@ -28,6 +28,10 @@
 #include "CoordinateHandler.h"
 #include "InputHelpers.h"
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 class BloonsUIMain : public QMainWindow{
 private:
     vector<QPushButton*> farmButtonList;

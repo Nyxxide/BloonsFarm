@@ -218,13 +218,10 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
             -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DENABLE_NEON=ON \
-            -DENABLE_SSE=OFF -DENABLE_SSE2=OFF -DENABLE_SSE3=OFF -DENABLE_SSSE3=OFF -DENABLE_SSE41=OFF -DENABLE_SSE42=OFF \
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
-            -DCPU_BASELINE=NEON -DCPU_BASELINE_REQUIRE=NEON -DCPU_DISPATCH=""
 
       - name: Configure (app-only, Windows)
         if: runner.os == 'Windows'

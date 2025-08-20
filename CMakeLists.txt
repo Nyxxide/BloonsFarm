@@ -3,7 +3,11 @@ project(BloonsFarm)
 
 set(CMAKE_CXX_STANDARD 20)
 
-add_compile_options(-march=native)
+if(MSVC)
+    #Does not support -march=native
+else()
+    add_compile_options(-march=native)
+endif()
 
 # --------------------------------------------------
 # ❶ Find OpenCV
