@@ -12,29 +12,29 @@ void hook_callback(uiohook_event* const event) {
 }
 
 // Function for formatting key for json
-string formatKey(const string& label) {
-    string key = label;
+std::string formatKey(const std::string& label) {
+    std::string key = label;
     transform(key.begin(), key.end(), key.begin(), ::tolower);
     replace(key.begin(), key.end(), ' ', '_');
     return key;
 }
 
 // Function for updating the json files
-void updateJson(string buttonText, string fileName){
-    string filePath = "Tower Positions/" + fileName + ".json";
+void updateJson(std::string buttonText, std::string fileName){
+    std::string filePath = "Tower Positions/" + fileName + ".json";
 
-    ifstream inFile(filePath);
+    std::ifstream inFile(filePath);
     if (!inFile.is_open()) {
         auto* error = new BloonsUIPopup("No File Found", "Error! Coordinate file not found!");
         error->show();
         return;
     }
 
-    json j;
+    nlohmann::json j;
     inFile >> j;
     inFile.close();
 
-    string key = formatKey(buttonText);
+    std::string key = formatKey(buttonText);
 
     j["towers"][key]["x"] = newx;
     j["towers"][key]["y"] = newy;
@@ -49,7 +49,7 @@ void updateJson(string buttonText, string fileName){
     outFile << j.dump(4);
 }
 
-BloonsUICoords::BloonsUICoords(std::string name, vector<std::string> labels, std::string file) {
+BloonsUICoords::BloonsUICoords(std::string name, std::vector<std::string> labels, std::string file) {
     // Pass in class variables from constructor
     title = name;
     button_labels = labels;
@@ -115,7 +115,7 @@ void BloonsUICoords::resetpos() {// Store button that called this function
     QPushButton *button = qobject_cast<QPushButton*>(sender);
     if(button){
         QString buttonmsg = button->text();
-        string buttonText = buttonmsg.toStdString();
+        std::string buttonText = buttonmsg.toStdString();
 
         // Hide existing layout
         subwinlab->hide();

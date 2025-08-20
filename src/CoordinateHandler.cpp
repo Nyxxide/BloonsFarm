@@ -23,9 +23,6 @@
 #include <X11/extensions/Xrandr.h>
 #endif
 
-using namespace std;
-using namespace nlohmann;
-
 constexpr int BASE_WIDTH = 1920;
 constexpr int BASE_HEIGHT = 1080;
 
@@ -138,19 +135,19 @@ std::string CoordinateHandler::nameConversion(char hotkey) {
 
 }
 
-void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
+void CoordinateHandler::gen(nlohmann::json towerData, nlohmann::json menuNavData, std::string fileName) {
     int width = 0;
     int height = 0;
-    cout << getScreenResolution(width, height) << endl;
-    cout << width << endl;
-    cout << height << endl;
+    std::cout << getScreenResolution(width, height) << std::endl;
+    std::cout << width << std::endl;
+    std::cout << height << std::endl;
 
-    json data = { {"towers" , {}}, {"menuNav", {}} };
-    json counter = {};
+    nlohmann::json data = { {"towers" , {}}, {"menuNav", {}} };
+    nlohmann::json counter = {};
 
     for(const auto& tower : towerData){
-        string hotkey = tower["hotkey"];
-        string towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_pos";
+        std::string hotkey = tower["hotkey"];
+        std::string towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_pos";
         auto [newx, newy] = scaleCoords(tower["x"].get<double>(), tower["y"].get<double>(), width, height);
         if(data["towers"].contains(towerName)){
             if(!counter.contains(towerName)){
@@ -159,7 +156,7 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
             else{
                 counter[towerName] += 1;
             }
-            string towerNum = to_string(counter[towerName]);
+            std::string towerNum = to_string(counter[towerName]);
             towerName = CoordinateHandler::nameConversion(hotkey[0]) + "_" + towerNum + "_pos";
 
             data["towers"][towerName] = {
@@ -191,10 +188,10 @@ void CoordinateHandler::gen(json towerData, json menuNavData, string fileName) {
             {"mode", menuNavData["mode"]}
     };
 
-    fileName = "Tower Positions/" + fileName + ".json";
-    ofstream outFile(fileName);
+    fileName = "Tower Positions/" + fileName + ".nlohmann::json";
+    std::ofstream outFile(fileName);
     if(!outFile){
-        cerr << "Can't open file." << endl;
+        std::cerr << "Can't open file." << std::endl;
         return;
     }
 

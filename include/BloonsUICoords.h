@@ -20,20 +20,17 @@
 #include "CoordinateHandler.h"
 #include "BloonsUIPopup.h"
 
-using namespace std;
-using namespace nlohmann;
-
 class BloonsUICoords : public QMainWindow{
 private:
-    string title;
-    string fileName;
-    vector<string> button_labels;
-    vector<QPushButton*> buttons;
+    std::string title;
+    std::string fileName;
+    std::vector<std::string> button_labels;
+    std::vector<QPushButton*> buttons;
     QLabel *subwinlab;
     QLabel *subwinlab2;
 
 public:
-    BloonsUICoords(string name, vector<string> labels, string file);
+    BloonsUICoords(std::string name, std::vector<std::string> labels, std::string file);
 
     void resetpos();
 };

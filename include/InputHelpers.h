@@ -17,8 +17,6 @@
 #include <cstdint>
 #include <iostream>
 
-using namespace std;
-
 inline void msleep(int ms){
     std::this_thread::sleep_for(std::chrono::milliseconds(ms));
 }
@@ -139,8 +137,8 @@ inline void clickCenter(const cv::Rect& bbox, int yOffset = 0)
 {
     int cx = bbox.x + bbox.width  / 2;
     int cy = bbox.y + bbox.height / 2 + yOffset;
-    cout << cx << endl;
-    cout << cy << endl;
+    std::cout << cx << std::endl;
+    std::cout << cy << std::endl;
     clickAt(cx, cy);
 }
 

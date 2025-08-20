@@ -37,7 +37,7 @@ BloonsUIMain::BloonsUIMain(){
     auto *window = new QWidget();
     auto *layout = new QVBoxLayout();
     auto *mainhboxtop = new QHBoxLayout();
-    vector<QHBoxLayout*> mainhboxbotrows;
+    std::vector<QHBoxLayout*> mainhboxbotrows;
     auto *runninghbox = new QHBoxLayout();
     auto *runningvbox = new QVBoxLayout();
 
@@ -65,9 +65,9 @@ BloonsUIMain::BloonsUIMain(){
 
     // Add menu options to menu bar
     try{
-        for(const auto& file : directory_iterator("Tower Positions")){
+        for(const auto& file : std::filesystem::directory_iterator("Tower Positions")){
             if(file.path().extension() == ".json"){
-                string fixedName = replaceChar(file.path(), '_', ' ');
+                std::string fixedName = replaceChar(file.path().string(), '_', ' ');
                 fixedName = removeSubstring(fixedName, "Tower Positions/");
                 fixedName = toTitleCase(fixedName);
                 fixedName = removeSubstring(fixedName, ".json");
@@ -78,7 +78,7 @@ BloonsUIMain::BloonsUIMain(){
             }
         }
     }
-    catch(const filesystem_error &err){
+    catch(const std::filesystem::filesystem_error &err){
         auto *error = new BloonsUIPopup("Error", "Files could not be opened!");
         error->show();
     }
@@ -91,13 +91,13 @@ BloonsUIMain::BloonsUIMain(){
     int buttonrow = -1;
 
     try{
-        for(const auto& file : directory_iterator("Tower Positions")){
+        for(const auto& file : std::filesystem::directory_iterator("Tower Positions")){
             if(file.path().extension() == ".json"){
                 if(buttonnum % 4 == 0){
                     mainhboxbotrows.push_back(new QHBoxLayout);
                     buttonrow += 1;
                 }
-                string fixedName = replaceChar(file.path(), '_', ' ');
+                std::string fixedName = replaceChar(file.path().string(), '_', ' ');
                 fixedName = removeSubstring(fixedName, "Tower Positions/");
                 fixedName = toTitleCase(fixedName);
                 fixedName = removeSubstring(fixedName, ".json");
@@ -114,7 +114,7 @@ BloonsUIMain::BloonsUIMain(){
             }
         }
     }
-    catch(const filesystem_error &err){
+    catch(const std::filesystem::filesystem_error &err){
         auto *error = new BloonsUIPopup("Error", "Files could not be opened!");
         error->show();
     }
@@ -156,16 +156,16 @@ void BloonsUIMain::editCoords() {
     QAction *action = qobject_cast<QAction*>(sender);
     if(action){
         QString menuoption = action->text();
-        string strmenuopt = menuoption.toStdString();
+        std::string strmenuopt = menuoption.toStdString();
         menuoption = menuoption.toLower().replace(" ", "_");
-        string strmenucoded = menuoption.toStdString();
-        ifstream jsonFile("Tower Positions/" + menuoption.toStdString() + ".json");
-        json data;
+        std::string strmenucoded = menuoption.toStdString();
+        std::ifstream jsonFile("Tower Positions/" + menuoption.toStdString() + ".json");
+        nlohmann::json data;
         jsonFile >> data;
         jsonFile.close();
-        vector<string> buttonlabels;
-        for(json::iterator towerName = data["towers"].begin(); towerName != data["towers"].end(); ++towerName){
-            string temp = replaceChar(towerName.key(), '_', ' ');
+        std::vector<std::string> buttonlabels;
+        for(nlohmann::json::iterator towerName = data["towers"].begin(); towerName != data["towers"].end(); ++towerName){
+            std::string temp = replaceChar(towerName.key(), '_', ' ');
             temp = toTitleCase(temp);
             buttonlabels.push_back(temp);
         }
@@ -200,11 +200,11 @@ void BloonsUIMain::setMaxFontSize(QPushButton* button, double maxFontSizePt) {
     button->setFont(font);
 }
 
-void BloonsUIMain::menuNav(string fileName) {
+void BloonsUIMain::menuNav(std::string fileName) {
     // 1. Load JSON
     std::ifstream f("Tower Positions/" + fileName + ".json");
     if (!f) { std::cerr << "Cannot open JSON\n"; return; }
-    json data = json::parse(f);
+    nlohmann::json data = nlohmann::json::parse(f);
 
     const auto& nv  = data["menuNav"];
     const std::string mapDifficulty = nv["mapDifficulty"];
@@ -219,14 +219,14 @@ void BloonsUIMain::menuNav(string fileName) {
 
     // 2. Attempt to locate map on screen
     auto mapMatch = waitForTemplate(mapPath, 0.7, 3, 250, &running);
-    cout << "Checking for map on screen" << endl;
+    std::cout << "Checking for map on screen" << std::endl;
     if(!running) return;
 
     // 3. If not visible, look for difficulty
     if (!mapMatch){
         while(running){
             auto mapDiffMatch = waitForTemplate(mapDiffpath, 0.7, -1, 250, &running);
-            cout << "Attempting to find map difficulty." << endl;
+            std::cout << "Attempting to find map difficulty." << std::endl;
             if(!running) return;
             if(mapDiffMatch){
                 clickCenter(mapDiffMatch->bbox);
@@ -239,26 +239,26 @@ void BloonsUIMain::menuNav(string fileName) {
 
     // 4. Click Map
     clickCenter(mapMatch->bbox, 20);
-    cout << "Found Map" << endl;
+    std::cout << "Found Map" << std::endl;
     if(!running) return;
 
     // 5. Locate and Click Difficulty
     auto diffMatch = waitForTemplate(diffPath, 0.7, -1, 250, &running);
     if(!running) return;
-    cout << diffMatch->bbox << endl;
+    std::cout << diffMatch->bbox << std::endl;
     clickCenter(diffMatch->bbox);
     if(!running) return;
-    cout << "Found Difficulty" << endl;
+    std::cout << "Found Difficulty" << std::endl;
 
 
     // 6. Locate and Click Difficulty
     auto modeMatch = waitForTemplate(modePath, 0.7, -1, 250, &running);
     if(!running) return;
     clickCenter(modeMatch->bbox);
-    cout << "Found Mode" << endl;
+    std::cout << "Found Mode" << std::endl;
 }
 
-void BloonsUIMain::towerPlacement(string fileName) {
+void BloonsUIMain::towerPlacement(std::string fileName) {
     // load JSON
     std::ifstream in("Tower Positions/" + fileName + ".json");
     if (!in) { qWarning("Cannot open JSON file"); return; }
@@ -312,27 +312,27 @@ void BloonsUIMain::farmLoop() {
     while(running){
         // 1. Home menu
         findAndClick(":/resources/MenuNav/homemenu.png", 0.7, -1, 250);
-        cout << "We Home Menu" << endl;
+        std::cout << "We Home Menu" << std::endl;
         if(!running) break;
 
         // 2. Navigate Map Menus
         menuNav(activeFile);
         if(!running) break;
-        cout << "We Menu Nav" << endl;
+        std::cout << "We Menu Nav" << std::endl;
 
         // 3. Look for pre-existing game
         if(waitForTemplate(":/resources/MenuNav/existinggame.png", 0.7, 5, 250, &running)){
             findAndClick(":/resources/MenuNav/existinggameok.png", 0.7, -1, 250);
-            cout << "We PreExisting Game" << endl;
+            std::cout << "We PreExisting Game" << std::endl;
         }
 
         // 4. Wait for in game HUD
         waitForTemplate(":/resources/MenuNav/ingame.png", 0.7, -1, 250);
-        cout << "We Find In Game HUD" << endl;
+        std::cout << "We Find In Game HUD" << std::endl;
 
         // 5. Tooltip suppression
         if (waitForTemplate(":/resources/MenuNav/deflationtooltip.png", 0.70, 5, 250, &running)){
-            cout << "We Tooltip Menu" << endl;
+            std::cout << "We Tooltip Menu" << std::endl;
             findAndClick(":/resources/MenuNav/tooltipok.png", 0.70, -1, 250);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
@@ -340,29 +340,29 @@ void BloonsUIMain::farmLoop() {
         // 6. Tower Placement
         towerPlacement(activeFile);
         if (!running) break;
-        cout << "We Place Towers" << endl;
+        std::cout << "We Place Towers" << std::endl;
 
         // 7. Start Round
         pressSpecial("space");
         std::this_thread::sleep_for(std::chrono::milliseconds(250));
         pressSpecial("space");
         pressSpecial("esc");
-        cout << "We Start Round" << endl;
+        std::cout << "We Start Round" << std::endl;
 
         // 8. Wait for Game End or Level-up Interrupt
         while (running)
         {
             // Game End
-            cout << "Checking for end\n" << endl;
+            std::cout << "Checking for end\n" << std::endl;
             printCurrentEST();
             auto endBtn = waitForTemplate(":/resources/MenuNav/endnext.png", 0.70, 1, 250, &running);
             if (endBtn) {
                 clickCenter(endBtn->bbox);
-                cout << "We End Game" << endl;
+                std::cout << "We End Game" << std::endl;
                 break;
             }
             // Level-up Interrupt
-            cout << "Checking for level\n" << endl;
+            std::cout << "Checking for level\n" << std::endl;
             if (auto lvl = waitForTemplate(":/resources/MenuNav/levelup.png", 0.70, 1, 250, &running))
             {   clickCenter(lvl->bbox); clickCenter(lvl->bbox); }
         }
@@ -370,16 +370,16 @@ void BloonsUIMain::farmLoop() {
 
         // 9. Go Home
         findAndClick(":/resources/MenuNav/endhome.png", 0.80);
-        cout << "We Go Home" << endl;
+        std::cout << "We Go Home" << std::endl;
 
         // 10. Collection Event Watch
         auto coll = waitForTemplate(":/resources/MenuNav/collectionevent.png", 0.70, 10, 250, &running);
         if (coll && running)
         {
-            cout << "We Collection Menu" << endl;
+            std::cout << "We Collection Menu" << std::endl;
             clickCenter(coll->bbox);
             findAndClick(":/resources/MenuNav/instamonkey.png", 0.70);
-            cout << "We InstaMonkey" << endl;
+            std::cout << "We InstaMonkey" << std::endl;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(800));
             clickCenter(coll->bbox);   // confirm once
@@ -393,16 +393,16 @@ void BloonsUIMain::farmLoop() {
                     break;
                 }
                 auto insta = waitForTemplate(":/resources/MenuNav/instamonkey.png", 0.70, 5, 250, &running);
-                cout << "We InstaMonkeyLoop" << endl;
+                std::cout << "We InstaMonkeyLoop" << std::endl;
                 clickCenter(insta->bbox);
                 std::this_thread::sleep_for(std::chrono::milliseconds(800));
                 clickCenter(insta->bbox);
                 std::this_thread::sleep_for(std::chrono::milliseconds(800));
             }
-            cout << "We End Collection" << endl;
+            std::cout << "We End Collection" << std::endl;
 
             findAndClick(":/resources/MenuNav/collectionback.png", 0.70);
-            cout << "We collection back" << endl;
+            std::cout << "We collection back" << std::endl;
 
             std::this_thread::sleep_for(std::chrono::milliseconds(250));
         }
@@ -421,7 +421,7 @@ void BloonsUIMain::startLoop() {
     QPushButton *button = qobject_cast<QPushButton*>(sender);
     if(button){
         QString buttonmsg = button->text();
-        string buttonText = buttonmsg.toStdString();
+        std::string buttonText = buttonmsg.toStdString();
         activeLabel->setText(QString::fromStdString("Program is currently running " + buttonText + " farm"));
         activeFile = replaceChar(buttonText, ' ', '_');
         transform(activeFile.begin(), activeFile.end(), activeFile.begin(), ::tolower);
