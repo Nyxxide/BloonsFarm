@@ -27,7 +27,6 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      # Use the pinned submodule SHA from the repo tree; no need to init the submodule
       - name: Compute Qt commit for cache key (from tree)
         id: qthash
         shell: bash
@@ -44,7 +43,7 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # --- only install tools / fetch sources / build IF cache miss ---
+      # 🔧 Only fetch & build if cache MISS
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
@@ -78,31 +77,47 @@ jobs:
         with:
           arch: x64
 
-      - name: "Init submodule: vendor/qt (shallow)"
+      # 🔧 Get the Qt super-repo AND its nested modules (qtbase)
+      - name: "Init submodule: vendor/qt (recursive, shallow)"
         if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: git submodule update --init --depth 1 vendor/qt
+        run: |
+          git submodule update --init --recursive --depth 1 vendor/qt
 
-      - name: Initialize Qt modules (only if using qt super-repo)
+      # 🔧 If the super-repo uses init-repository, run it too (belt & suspenders)
+      - name: "Initialize Qt modules via init-repository (if present)"
         if: steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ -f "vendor/qt/init-repository" ] && [ ! -d "vendor/qt/qtbase" ]; then
+          if [ -f "vendor/qt/init-repository" ]; then
             (cd vendor/qt && perl init-repository --module-subset=qtbase)
           fi
 
+      # 🔧 Verify qtbase exists before configuring superbuild
+      - name: "Verify qtbase sources present"
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: |
+          test -f vendor/qt/qtbase/CMakeLists.txt || (echo "vendor/qt/qtbase missing; ensure submodules fetched" && exit 1)
+
+      # 🔧 Use a QT-specific build dir to avoid cache/toggle bleed
       - name: Configure superbuild (Qt only)
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
-          cmake -S superbuild -B superbuild/build -G Ninja \
+          cmake -S superbuild -B superbuild/build-qt -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSUPERBUILD_BUILD_QT=ON \
-            -DSUPERBUILD_BUILD_OPENCV=OFF
+            -DSUPERBUILD_BUILD_QT:BOOL=ON \
+            -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
 
       - name: Build & install Qt
         if: steps.cache-qt.outputs.cache-hit != 'true'
-        shell: bash
+        run: cmake --build superbuild/build-qt --target qtbase_static --config Release -j 4
+
+      # Put the Qt install where the app job expects it
+      - name: Move Qt install to canonical path
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
-          cmake --build superbuild/build --target qtbase_static --config Release -j 4
+          mkdir -p superbuild/build
+          rm -rf superbuild/build/_qt
+          mv superbuild/build-qt/_qt superbuild/build/_qt
 
       - name: Validate Qt prefix (cached or built)
         run: |
@@ -143,7 +158,7 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      # --- only install tools / fetch sources / build IF cache miss ---
+      # Only fetch & build if cache MISS
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -172,19 +187,25 @@ jobs:
         if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: git submodule update --init --depth 1 vendor/opencv
 
+      # 🔧 Use an OCV-specific build dir to avoid toggle bleed
       - name: Configure superbuild (OpenCV only)
         if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
-          cmake -S superbuild -B superbuild/build -G Ninja \
+          cmake -S superbuild -B superbuild/build-ocv -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DSUPERBUILD_BUILD_QT=OFF \
-            -DSUPERBUILD_BUILD_OPENCV=ON
+            -DSUPERBUILD_BUILD_QT:BOOL=OFF \
+            -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
 
       - name: Build & install OpenCV
         if: steps.cache-opencv.outputs.cache-hit != 'true'
-        shell: bash
+        run: cmake --build superbuild/build-ocv --target opencv_static --config Release -j 4
+
+      - name: Move OpenCV install to canonical path
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
-          cmake --build superbuild/build --target opencv_static --config Release -j 4
+          mkdir -p superbuild/build
+          rm -rf superbuild/build/_opencv
+          mv superbuild/build-ocv/_opencv superbuild/build/_opencv
 
       - name: Validate OpenCV prefix (cached or built)
         run: |
@@ -249,7 +270,6 @@ jobs:
         with:
           arch: x64
 
-      # ---- Configure & build the app (no dependency builds here) ----
       - name: Configure app (Linux/macOS)
         if: runner.os != 'Windows'
         run: |
@@ -279,7 +299,6 @@ jobs:
         shell: pwsh
         run: cmake --build build --config Release -j 4
 
-      # -------- package per OS --------
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
