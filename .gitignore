@@ -124,6 +124,8 @@ fabric.properties
 
 .idea/*
 
+.vs
+
 !.idea/codeStyles
 !.idea/runConfigurations
 

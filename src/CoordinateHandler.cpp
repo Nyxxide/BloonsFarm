@@ -188,7 +188,7 @@ void CoordinateHandler::gen(nlohmann::json towerData, nlohmann::json menuNavData
             {"mode", menuNavData["mode"]}
     };
 
-    fileName = "Tower Positions/" + fileName + ".nlohmann::json";
+    fileName = "Tower Positions/" + fileName + ".json";
     std::ofstream outFile(fileName);
     if(!outFile){
         std::cerr << "Can't open file." << std::endl;

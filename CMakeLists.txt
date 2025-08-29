@@ -40,7 +40,43 @@ include_directories(include)
 # ❹ Qt Setup
 # --------------------------------------------------
 find_package(Qt6 REQUIRED COMPONENTS Widgets)
-qt_add_executable(BloonsFarm ${SOURCES})
+if(WIN32)
+    qt_add_executable(BloonsFarm WIN32 ${SOURCES})
+else()
+    qt_add_executable(BloonsFarm ${SOURCES})
+endif()
+
+# ---------- Windows: EXE icon via .rc ----------
+if (WIN32)
+  # Absolute path to your .ico in the source tree
+  set(APP_ICON_FILE "${CMAKE_SOURCE_DIR}/resources/UI/btdfarmicon.ico")
+  # Normalize to forward slashes (rc.exe accepts this)
+  file(TO_CMAKE_PATH "${APP_ICON_FILE}" APP_ICON_FILE)
+
+  # Generate an .rc in the *build* dir that contains the absolute path
+  set(GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc")
+  configure_file(
+    "${CMAKE_SOURCE_DIR}/resources/appicon.rc.in"
+    "${GENERATED_RC}"
+    @ONLY
+  )
+
+  # Add the *generated* .rc to the target
+  target_sources(BloonsFarm PRIVATE "${GENERATED_RC}")
+endif()
+
+# ---------- macOS: bundle icon (.icns) ----------
+#if (APPLE)
+#  set(APP_ICON_MACOS ${CMAKE_SOURCE_DIR}/resources/app.icns)
+#  # Ensure the .icns ends up in BloonsFarm.app/Contents/Resources
+#  set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
+#  target_sources(BloonsFarm PRIVATE ${APP_ICON_MACOS})
+#  set_target_properties(BloonsFarm PROPERTIES
+#    MACOSX_BUNDLE TRUE
+#    MACOSX_BUNDLE_ICON_FILE app.icns  # name only, must match the .icns filename
+#  )
+#endif()
+
 target_link_libraries(BloonsFarm PRIVATE Qt6::Widgets)
 
 # ----  resource auto-generation  ----

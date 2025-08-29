@@ -34,11 +34,11 @@
 
 class BloonsUIMain : public QMainWindow{
 private:
-    vector<QPushButton*> farmButtonList;
+    std::vector<QPushButton*> farmButtonList;
     QPushButton* quitButton;
     QLabel* mainLabel;
     QLabel* activeLabel;
-    string activeFile;
+    std:: string activeFile;
 
     std::thread loopThread;
     std::atomic_bool running{false};
@@ -61,9 +61,9 @@ public:
 
     void farmLoop();
 
-    void towerPlacement(string fileName);
+    void towerPlacement(std::string fileName);
 
-    void menuNav(string fileName);
+    void menuNav(std::string fileName);
 
     void startLoop();
 

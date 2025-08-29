@@ -68,7 +68,11 @@ BloonsUIMain::BloonsUIMain(){
         for(const auto& file : std::filesystem::directory_iterator("Tower Positions")){
             if(file.path().extension() == ".json"){
                 std::string fixedName = replaceChar(file.path().string(), '_', ' ');
+#ifdef _WIN32
+                fixedName = removeSubstring(fixedName, "Tower Positions\\");
+#else
                 fixedName = removeSubstring(fixedName, "Tower Positions/");
+#endif
                 fixedName = toTitleCase(fixedName);
                 fixedName = removeSubstring(fixedName, ".json");
                 QString temp = QString::fromStdString(fixedName);
@@ -98,7 +102,11 @@ BloonsUIMain::BloonsUIMain(){
                     buttonrow += 1;
                 }
                 std::string fixedName = replaceChar(file.path().string(), '_', ' ');
+#ifdef _WIN32
+                fixedName = removeSubstring(fixedName, "Tower Positions\\");
+#else
                 fixedName = removeSubstring(fixedName, "Tower Positions/");
+#endif
                 fixedName = toTitleCase(fixedName);
                 fixedName = removeSubstring(fixedName, ".json");
                 QString temp = QString::fromStdString(fixedName);
