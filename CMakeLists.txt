@@ -13,21 +13,20 @@ endif()
 # ❷ Include directories
 # --------------------------------------------------
 include_directories(
-include
-include/jsonParser
-
+    include
+    include/jsonParser
 )
 
 # --------------------------------------------------
 # ❸ Source files
 # --------------------------------------------------
 set(SOURCES
-src/main.cpp
-src/CoordinateHandler.cpp
-src/BloonsUIPopup.cpp
-src/BloonsUICoords.cpp
-src/BloonsUIMain.cpp
-src/ScreenGrabber.cpp
+    src/main.cpp
+    src/CoordinateHandler.cpp
+    src/BloonsUIPopup.cpp
+    src/BloonsUICoords.cpp
+    src/BloonsUIMain.cpp
+    src/ScreenGrabber.cpp
 )
 
 include_directories(include)
@@ -42,11 +41,12 @@ else()
     qt_add_executable(BloonsFarm ${SOURCES})
 endif()
 
-# ===== Option A: force-enable std::byte on MSVC (fixes CI with /D_HAS_STD_BYTE=0) =====
+# ===== Windows: force-enable std::byte on MSVC (fixes CI with /D_HAS_STD_BYTE=0) =====
 if (MSVC)
+    # Undefine any stray value and force it ON (MSVC takes last definition)
     target_compile_options(BloonsFarm PRIVATE /U_HAS_STD_BYTE /D_HAS_STD_BYTE=1)
 endif()
-# ======================================================================================
+# =====================================================================================
 
 # ---------- Windows: EXE icon via .rc ----------
 if (WIN32)
@@ -87,16 +87,16 @@ set(GENERATED_QRC "${CMAKE_BINARY_DIR}/resources.qrc")
 
 # Re-run this rule whenever ANY file in resources/ changes
 file(GLOB_RECURSE RESOURCE_DEPS CONFIGURE_DEPENDS
-"${RESOURCE_DIR}/*.*")
+    "${RESOURCE_DIR}/*.*")
 
 add_custom_command(
-OUTPUT  ${GENERATED_QRC}
-COMMAND ${CMAKE_COMMAND}  -DRESOURCE_DIR=${RESOURCE_DIR}
--DOUTPUT_QRC=${GENERATED_QRC}
--P ${CMAKE_SOURCE_DIR}/cmake/generate_qrc.cmake
-DEPENDS ${RESOURCE_DEPS}
-COMMENT "Generating resources.qrc"
-VERBATIM)
+    OUTPUT  ${GENERATED_QRC}
+    COMMAND ${CMAKE_COMMAND}  -DRESOURCE_DIR=${RESOURCE_DIR}
+                              -DOUTPUT_QRC=${GENERATED_QRC}
+                              -P ${CMAKE_SOURCE_DIR}/cmake/generate_qrc.cmake
+    DEPENDS ${RESOURCE_DEPS}
+    COMMENT "Generating resources.qrc"
+    VERBATIM)
 
 # Mark as "generated" so CLion/Ninja don’t complain
 set_source_files_properties(${GENERATED_QRC} PROPERTIES GENERATED TRUE)
@@ -106,7 +106,6 @@ qt_add_resources(EMBEDDED_RES "${GENERATED_QRC}")
 
 # Make the exe use that generated .cpp
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EMBEDDED_RES})
-
 
 # --------------------------------------------------
 # ❺ libuiohook connection
@@ -118,30 +117,29 @@ if (WIN32)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE uiohook)
 elseif (APPLE)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-    uiohook
-    "-framework CoreFoundation"
-    "-framework CoreGraphics"
+        uiohook
+        "-framework CoreFoundation"
+        "-framework CoreGraphics"
     )
 elseif (UNIX)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-    uiohook
-    X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
+        uiohook
+        X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
     )
 endif()
 
-
 # --------------------------------------------------
-# ❼ Link OpenCV last
+# ❼ OpenCV build toggles (since you vendored OpenCV and build it here)
 # --------------------------------------------------
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
-set(BUILD_opencv_world ON CACHE BOOL "Build single static lib" FORCE)
-set(BUILD_TESTS OFF CACHE BOOL "Disable tests" FORCE)
-set(BUILD_PERF_TESTS OFF CACHE BOOL "Disable performance tests" FORCE)
-set(BUILD_EXAMPLES OFF CACHE BOOL "Disable examples" FORCE)
+set(BUILD_opencv_world ON  CACHE BOOL "Build single static lib" FORCE)
+set(BUILD_TESTS OFF       CACHE BOOL "Disable tests" FORCE)
+set(BUILD_PERF_TESTS OFF  CACHE BOOL "Disable performance tests" FORCE)
+set(BUILD_EXAMPLES OFF    CACHE BOOL "Disable examples" FORCE)
 set(BUILD_opencv_python OFF CACHE BOOL "Disable python shit" FORCE)
+set(BUILD_opencv_apps OFF CACHE BOOL "Disable OpenCV apps" FORCE)  # <— avoid linking app tools on mac
 
-set(WITH_TBB ON CACHE BOOL "Enable TBB parallelism" FORCE)
-set(WITH_OPENMP ON CACHE BOOL "Enable OpenMP" FORCE)
+set(WITH_TBB   ON  CACHE BOOL "Enable TBB parallelism" FORCE)
 set(WITH_OPENCL ON CACHE BOOL "Enable OpenCL" FORCE)
 set(WITH_EIGEN ON CACHE BOOL "Use Eigen for matrix ops" FORCE)
 
@@ -162,12 +160,22 @@ endif()
 
 set(ENABLE_FAST_MATH ON CACHE BOOL "Use fast math" FORCE)
 
-find_package(OpenMP REQUIRED)
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+# --- OpenMP (disable on macOS to stay on Apple toolchain) ---
+if(APPLE)
+  set(WITH_OPENMP OFF CACHE BOOL "Disable OpenMP on macOS" FORCE)
+  find_package(OpenMP)  # optional
+  if (OpenMP_CXX_FOUND)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+  endif()
+else()
+  set(WITH_OPENMP ON  CACHE BOOL "Enable OpenMP" FORCE)
+  find_package(OpenMP REQUIRED)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
+endif()
 
 # Disable IPP (causes errors)
-set(WITH_IPP OFF CACHE BOOL "Disable IPP" FORCE)
-set(WITH_ITT OFF CACHE BOOL "Disable ITT" FORCE)
+set(WITH_IPP   OFF CACHE BOOL "Disable IPP" FORCE)
+set(WITH_ITT   OFF CACHE BOOL "Disable ITT" FORCE)
 set(WITH_IPP_A OFF CACHE BOOL "Disable IPP Async" FORCE)
 
 add_subdirectory(vendor/opencv ${CMAKE_BINARY_DIR}/vendor/opencv-build)
@@ -204,5 +212,5 @@ include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
-RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )

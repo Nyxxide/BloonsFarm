@@ -61,6 +61,17 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # ============================================================
+# macOS: force Apple toolchain + arm64 arch to avoid libc++ mismatch
+# ============================================================
+if(APPLE)
+    list(APPEND QT_COMMON_ARGS
+        -DCMAKE_C_COMPILER=/usr/bin/clang
+        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+        -DCMAKE_OSX_ARCHITECTURES=arm64
+    )
+endif()
+
+# ============================================================
 # WINDOWS-SPECIFIC CONFIGURATION (static CRT, consistent /MT)
 # ============================================================
 if (WIN32)
@@ -172,6 +183,15 @@ set(_APP_ARGS
     -DQt6_DIR=${QT_INSTALL_PREFIX}/lib/cmake/Qt6   # hard-pin to *this* Qt
     -DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}
 )
+
+if(APPLE)
+    list(APPEND _APP_ARGS
+        -DCMAKE_C_COMPILER=/usr/bin/clang
+        -DCMAKE_CXX_COMPILER=/usr/bin/clang++
+        -DCMAKE_OSX_ARCHITECTURES=arm64
+    )
+endif()
+
 if (WIN32)
     list(APPEND _APP_ARGS
         ${APP_MSVC_RUNTIME_ARG}
