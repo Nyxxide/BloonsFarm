@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.29)
 
-# --- macOS toolchain sanity (no YAML changes needed) ---
-# If we're on Apple Silicon and the arch isn't set, default to arm64.
-if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
-  set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+# --- macOS toolchain: force AppleClang + arm64, no YAML changes needed ---
+if(APPLE)
+  set(CMAKE_C_COMPILER  "/usr/bin/clang"   CACHE STRING "" FORCE)
+  set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE STRING "" FORCE)
+  set(CMAKE_OSX_ARCHITECTURES "arm64"       CACHE STRING "" FORCE)
+  # Match GH macOS runners; avoids ABI mismatches with system libc++
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0"    CACHE STRING "" FORCE)
 endif()
 
 project(BloonsFarm)
@@ -208,27 +211,7 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
-# -------- macOS: Option A — explicitly link Homebrew libc++/libc++abi --------
-if(APPLE)
-  # Resolve the compiler to a real path, then check if it's Homebrew LLVM
-  get_filename_component(_CXX_REAL "${CMAKE_CXX_COMPILER}" REALPATH)
-  if(_CXX_REAL MATCHES "/opt/homebrew/opt/llvm")
-    message(STATUS "Detected Homebrew LLVM at: ${_CXX_REAL}")
-
-    # Find the actual dylibs in Homebrew’s prefix (avoid system libc++)
-    find_library(HB_LIBCXX    c++    HINTS /opt/homebrew/opt/llvm/lib NO_DEFAULT_PATH REQUIRED)
-    find_library(HB_LIBCXXABI c++abi HINTS /opt/homebrew/opt/llvm/lib NO_DEFAULT_PATH REQUIRED)
-
-    # Link explicitly and embed rpath so the loader finds them
-    target_link_libraries(BloonsFarm PRIVATE "${HB_LIBCXX}" "${HB_LIBCXXABI}")
-    target_link_options(BloonsFarm PRIVATE -Wl,-rpath,/opt/homebrew/opt/llvm/lib)
-
-    # Keep the deployment target consistent with GH mac runners (optional)
-    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
-      set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "" FORCE)
-    endif()
-  endif()
-endif()
+# (No mac/Homebrew libc++ overrides here; we are using system AppleClang/libc++.)
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
