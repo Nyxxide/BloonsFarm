@@ -221,7 +221,7 @@ jobs:
             -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_ARCHITECTURES=arm64 \
             -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
+            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE=""
 
       - name: Configure (app-only, Windows)
         if: runner.os == 'Windows'
@@ -252,10 +252,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          if [ -f "build/BloonsFarm++" ]; then
-            BIN="build/BloonsFarm++"
+          if [ -f "build/BloonsFarm" ]; then
+            BIN="build/BloonsFarm"
           else
-            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+            BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
           fi
           if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
             echo "Could not locate built binary. Contents of build/:"
@@ -263,7 +263,7 @@ jobs:
             exit 1
           fi
           echo "Packaging $BIN"
-          tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-linux-x86_64.tar.gz" "$(basename "$BIN")"
+          tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm-linux-x86_64.tar.gz" "$(basename "$BIN")"
 
       - name: Package (macOS)
         if: runner.os == 'macOS'
@@ -271,24 +271,24 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          if [ -d "build/BloonsFarm++.app" ]; then
-            /usr/bin/zip -r "out/BloonsFarm++-macOS.zip" "build/BloonsFarm++.app"
+          if [ -d "build/BloonsFarm.app" ]; then
+            /usr/bin/zip -r "out/BloonsFarm-macOS.zip" "build/BloonsFarm.app"
           else
-            BIN="$(find build -maxdepth 3 -type f -perm -111 -name 'BloonsFarm*' | head -n 1 || true)"
+            BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
             if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
               echo "Could not locate app bundle or binary. Contents of build/:"
               ls -lah build || true
               exit 1
             fi
             echo "Packaging $BIN"
-            tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm++-macOS.tar.gz" "$(basename "$BIN")"
+            tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm-macOS.tar.gz" "$(basename "$BIN")"
           fi
 
       - name: Package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $APP = "BloonsFarm++"
+          $APP = "BloonsFarm"
           New-Item -ItemType Directory -Force -Path out | Out-Null
           if (Test-Path "build\Release\$APP.exe") {
             Compress-Archive -Path "build\Release\$APP.exe" -DestinationPath "out\$APP-windows-x64.zip" -Force

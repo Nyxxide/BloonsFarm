@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.29)
+
+# --- macOS toolchain sanity (no YAML changes needed) ---
+# If we're on Apple Silicon and the arch isn't set, default to arm64.
+if(APPLE AND NOT CMAKE_OSX_ARCHITECTURES)
+  set(CMAKE_OSX_ARCHITECTURES "arm64" CACHE STRING "" FORCE)
+endif()
+
 project(BloonsFarm)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -67,25 +74,23 @@ if (WIN32)
   target_sources(BloonsFarm PRIVATE "${GENERATED_RC}")
 endif()
 
-# ---------- macOS: bundle icon (.icns) ----------
+# ---------- macOS: prefer system bundle icon (optional; currently disabled) ----------
 #if (APPLE)
 #  set(APP_ICON_MACOS ${CMAKE_SOURCE_DIR}/resources/app.icns)
-#  # Ensure the .icns ends up in BloonsFarm.app/Contents/Resources
 #  set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
 #  target_sources(BloonsFarm PRIVATE ${APP_ICON_MACOS})
 #  set_target_properties(BloonsFarm PROPERTIES
 #    MACOSX_BUNDLE TRUE
-#    MACOSX_BUNDLE_ICON_FILE app.icns  # name only, must match the .icns filename
+#    MACOSX_BUNDLE_ICON_FILE app.icns
 #  )
 #endif()
 
 target_link_libraries(BloonsFarm PRIVATE Qt6::Widgets)
 
-# ----  resource auto-generation  ----
+# ---- resource auto-generation ----
 set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources")
 set(GENERATED_QRC "${CMAKE_BINARY_DIR}/resources.qrc")
 
-# Re-run this rule whenever ANY file in resources/ changes
 file(GLOB_RECURSE RESOURCE_DEPS CONFIGURE_DEPENDS
     "${RESOURCE_DIR}/*.*")
 
@@ -98,13 +103,9 @@ add_custom_command(
     COMMENT "Generating resources.qrc"
     VERBATIM)
 
-# Mark as "generated" so CLion/Ninja don’t complain
 set_source_files_properties(${GENERATED_QRC} PROPERTIES GENERATED TRUE)
 
-# Compile the .qrc into C++ code
 qt_add_resources(EMBEDDED_RES "${GENERATED_QRC}")
-
-# Make the exe use that generated .cpp
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EMBEDDED_RES})
 
 # --------------------------------------------------
@@ -129,7 +130,7 @@ elseif (UNIX)
 endif()
 
 # --------------------------------------------------
-# ❼ OpenCV build toggles (since you vendored OpenCV and build it here)
+# ❼ OpenCV build toggles (vendored OpenCV built here)
 # --------------------------------------------------
 set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
 set(BUILD_opencv_world ON  CACHE BOOL "Build single static lib" FORCE)
@@ -137,21 +138,18 @@ set(BUILD_TESTS OFF       CACHE BOOL "Disable tests" FORCE)
 set(BUILD_PERF_TESTS OFF  CACHE BOOL "Disable performance tests" FORCE)
 set(BUILD_EXAMPLES OFF    CACHE BOOL "Disable examples" FORCE)
 set(BUILD_opencv_python OFF CACHE BOOL "Disable python shit" FORCE)
-set(BUILD_opencv_apps OFF CACHE BOOL "Disable OpenCV apps" FORCE)  # <— avoid linking app tools on mac
+set(BUILD_opencv_apps OFF CACHE BOOL "Disable OpenCV apps" FORCE)
 
 set(WITH_TBB   ON  CACHE BOOL "Enable TBB parallelism" FORCE)
 set(WITH_OPENCL ON CACHE BOOL "Enable OpenCL" FORCE)
 set(WITH_EIGEN ON CACHE BOOL "Use Eigen for matrix ops" FORCE)
 
 # --- SIMD / CPU features (OpenCV) ---
-# Disable x86 SIMD on macOS (Apple Silicon); enable on others.
 if(APPLE)
   set(ENABLE_SSE OFF CACHE BOOL "" FORCE)
   set(ENABLE_AVX OFF CACHE BOOL "" FORCE)
-  # Let OpenCV decide baseline dispatch without forcing x86 requirements
   set(CPU_BASELINE "" CACHE STRING "" FORCE)
   set(CPU_DISPATCH "" CACHE STRING "" FORCE)
-  # Optional: NEON is the SIMD extension on arm64; enable if your OpenCV supports it
   set(ENABLE_NEON ON CACHE BOOL "" FORCE)
 else()
   set(ENABLE_SSE ON  CACHE BOOL "" FORCE)
@@ -209,6 +207,26 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 )
 
 include_directories(${CMAKE_BINARY_DIR}/opencv2)
+
+# -------- macOS: ensure we link the correct libc++ when using Homebrew LLVM --------
+if(APPLE)
+  # Resolve the compiler to a real path, then check if it's Homebrew LLVM
+  get_filename_component(_CXX_REAL "${CMAKE_CXX_COMPILER}" REALPATH)
+  if(_CXX_REAL MATCHES "/opt/homebrew/opt/llvm")
+    message(STATUS "Detected Homebrew LLVM at: ${_CXX_REAL}")
+    # Direct the linker to Homebrew's libc++ and embed rpath so it resolves at runtime.
+    target_link_options(BloonsFarm PRIVATE
+      -L/opt/homebrew/opt/llvm/lib
+      -Wl,-rpath,/opt/homebrew/opt/llvm/lib
+      -lc++
+      -lc++abi
+    )
+    # Optional: set a modern deployment target to match CI runners
+    if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
+      set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "" FORCE)
+    endif()
+  endif()
+endif()
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
