@@ -1,11 +1,10 @@
 cmake_minimum_required(VERSION 3.29)
 
-# --- macOS toolchain: force AppleClang + arm64, no YAML changes needed ---
+# --- macOS toolchain: force AppleClang + arm64 ---
 if(APPLE)
   set(CMAKE_C_COMPILER  "/usr/bin/clang"   CACHE STRING "" FORCE)
   set(CMAKE_CXX_COMPILER "/usr/bin/clang++" CACHE STRING "" FORCE)
   set(CMAKE_OSX_ARCHITECTURES "arm64"       CACHE STRING "" FORCE)
-  # Match GH macOS runners; avoids ABI mismatches with system libc++
   set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0"    CACHE STRING "" FORCE)
 endif()
 
@@ -51,42 +50,26 @@ else()
     qt_add_executable(BloonsFarm ${SOURCES})
 endif()
 
-# ===== Windows: force-enable std::byte on MSVC (fixes CI with /D_HAS_STD_BYTE=0) =====
+# ===== Windows: force-enable std::byte on MSVC =====
 if (MSVC)
-    # Undefine any stray value and force it ON (MSVC takes last definition)
     target_compile_options(BloonsFarm PRIVATE /U_HAS_STD_BYTE /D_HAS_STD_BYTE=1)
 endif()
-# =====================================================================================
 
 # ---------- Windows: EXE icon via .rc ----------
 if (WIN32)
-  # Absolute path to your .ico in the source tree
   set(APP_ICON_FILE "${CMAKE_SOURCE_DIR}/resources/UI/btdfarmicon.ico")
-  # Normalize to forward slashes (rc.exe accepts this)
   file(TO_CMAKE_PATH "${APP_ICON_FILE}" APP_ICON_FILE)
-
-  # Generate an .rc in the *build* dir that contains the absolute path
   set(GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc")
   configure_file(
     "${CMAKE_SOURCE_DIR}/resources/appicon.rc.in"
     "${GENERATED_RC}"
     @ONLY
   )
-
-  # Add the *generated* .rc to the target
   target_sources(BloonsFarm PRIVATE "${GENERATED_RC}")
 endif()
 
-# ---------- macOS: prefer system bundle icon (optional; currently disabled) ----------
-#if (APPLE)
-#  set(APP_ICON_MACOS ${CMAKE_SOURCE_DIR}/resources/app.icns)
-#  set_source_files_properties(${APP_ICON_MACOS} PROPERTIES MACOSX_PACKAGE_LOCATION "Resources")
-#  target_sources(BloonsFarm PRIVATE ${APP_ICON_MACOS})
-#  set_target_properties(BloonsFarm PROPERTIES
-#    MACOSX_BUNDLE TRUE
-#    MACOSX_BUNDLE_ICON_FILE app.icns
-#  )
-#endif()
+# ---------- macOS bundle icon (optional, disabled) ----------
+# (unchanged)
 
 target_link_libraries(BloonsFarm PRIVATE Qt6::Widgets)
 
@@ -107,7 +90,6 @@ add_custom_command(
     VERBATIM)
 
 set_source_files_properties(${GENERATED_QRC} PROPERTIES GENERATED TRUE)
-
 qt_add_resources(EMBEDDED_RES "${GENERATED_QRC}")
 target_sources(${CMAKE_PROJECT_NAME} PRIVATE ${EMBEDDED_RES})
 
@@ -128,90 +110,30 @@ elseif (APPLE)
 elseif (UNIX)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
         uiohook
-        X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
+        X11 Xtst xcb xkbcommon xkbcommon-x1 1 Xinerama Xt X11-xcb Xext Xrandr
     )
 endif()
 
 # --------------------------------------------------
-# ❼ OpenCV build toggles (vendored OpenCV built here)
+# ❻ OpenCV: now consume via find_package (static from superbuild)
 # --------------------------------------------------
-set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build static libs" FORCE)
-set(BUILD_opencv_world ON  CACHE BOOL "Build single static lib" FORCE)
-set(BUILD_TESTS OFF       CACHE BOOL "Disable tests" FORCE)
-set(BUILD_PERF_TESTS OFF  CACHE BOOL "Disable performance tests" FORCE)
-set(BUILD_EXAMPLES OFF    CACHE BOOL "Disable examples" FORCE)
-set(BUILD_opencv_python OFF CACHE BOOL "Disable python shit" FORCE)
-set(BUILD_opencv_apps OFF CACHE BOOL "Disable OpenCV apps" FORCE)
+# Superbuild passes:
+#   -DCMAKE_PREFIX_PATH=<qt_install>;<opencv_install>
+#   -DOpenCV_DIR=<opencv_install>/lib/cmake/opencv4
+# So this resolves to the static config we installed.
+find_package(OpenCV CONFIG REQUIRED)
 
-set(WITH_TBB   ON  CACHE BOOL "Enable TBB parallelism" FORCE)
-set(WITH_OPENCL ON CACHE BOOL "Enable OpenCL" FORCE)
-set(WITH_EIGEN ON CACHE BOOL "Use Eigen for matrix ops" FORCE)
-
-# --- SIMD / CPU features (OpenCV) ---
-if(APPLE)
-  set(ENABLE_SSE OFF CACHE BOOL "" FORCE)
-  set(ENABLE_AVX OFF CACHE BOOL "" FORCE)
-  set(CPU_BASELINE "" CACHE STRING "" FORCE)
-  set(CPU_DISPATCH "" CACHE STRING "" FORCE)
-  set(ENABLE_NEON ON CACHE BOOL "" FORCE)
+# Prefer the world lib we built; fall back gracefully if needed.
+if (TARGET opencv_world)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world)
+elseif (TARGET OpenCV::opencv_world)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenCV::opencv_world)
+elseif (TARGET opencv_core)
+    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
+        opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs)
 else()
-  set(ENABLE_SSE ON  CACHE BOOL "" FORCE)
-  set(ENABLE_AVX ON  CACHE BOOL "" FORCE)
+    message(FATAL_ERROR "OpenCV targets not found. Check OpenCV_DIR / CMAKE_PREFIX_PATH.")
 endif()
-
-set(ENABLE_FAST_MATH ON CACHE BOOL "Use fast math" FORCE)
-
-# --- OpenMP (disable on macOS to stay on Apple toolchain) ---
-if(APPLE)
-  set(WITH_OPENMP OFF CACHE BOOL "Disable OpenMP on macOS" FORCE)
-  find_package(OpenMP)  # optional
-  if (OpenMP_CXX_FOUND)
-    target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
-  endif()
-else()
-  set(WITH_OPENMP ON  CACHE BOOL "Enable OpenMP" FORCE)
-  find_package(OpenMP REQUIRED)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
-endif()
-
-# Disable IPP (causes errors)
-set(WITH_IPP   OFF CACHE BOOL "Disable IPP" FORCE)
-set(WITH_ITT   OFF CACHE BOOL "Disable ITT" FORCE)
-set(WITH_IPP_A OFF CACHE BOOL "Disable IPP Async" FORCE)
-
-add_subdirectory(vendor/opencv ${CMAKE_BINARY_DIR}/vendor/opencv-build)
-include_directories(vendor/opencv/include)
-set(OpenCV_STATIC ON)
-
-target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world)
-target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
-        ${CMAKE_BINARY_DIR}/vendor/opencv
-        vendor/opencv/modules/calib3d/include
-        vendor/opencv/modules/core/include
-        vendor/opencv/modules/dnn/include
-        vendor/opencv/modules/features2d/include
-        vendor/opencv/modules/flann/include
-        vendor/opencv/modules/gapi/include
-        vendor/opencv/modules/highgui/include
-        vendor/opencv/modules/imgcodecs/include
-        vendor/opencv/modules/imgproc/include
-        vendor/opencv/modules/java/include
-        vendor/opencv/modules/js/include
-        vendor/opencv/modules/ml/include
-        vendor/opencv/modules/objc/include
-        vendor/opencv/modules/objdetect/include
-        vendor/opencv/modules/photo/include
-        vendor/opencv/modules/python/include
-        vendor/opencv/modules/stitching/include
-        vendor/opencv/modules/ts/include
-        vendor/opencv/modules/video/include
-        vendor/opencv/modules/videoio/include
-        vendor/opencv/modules/world/include
-)
-
-include_directories(${CMAKE_BINARY_DIR}/opencv2)
-
-# (No mac/Homebrew libc++ overrides here; we are using system AppleClang/libc++.)
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES

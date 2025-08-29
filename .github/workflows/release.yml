@@ -1,4 +1,4 @@
-name: Build & Release (Static Qt)
+name: Build and Release
 
 on:
   push:
@@ -51,10 +51,8 @@ jobs:
         shell: pwsh
         run: |
           choco install ninja -y
-          # Perl is needed only if you use the Qt super-repo initializer
           choco install strawberryperl -y
 
-      # Ensure MSVC toolchain is active if Qt ever rebuilds on Windows
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -64,7 +62,7 @@ jobs:
       - name: Initialize Qt modules (only if using qt super-repo)
         shell: bash
         run: |
-          if [ ! -d "vendor/qt/qtbase" ]; then
+          if [ ! -d "vendor/qt/qtbase" ] && [ -f "vendor/qt/init-repository" ]; then
             (cd vendor/qt && perl init-repository --module-subset=qtbase)
           fi
 
@@ -88,10 +86,13 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      - name: Configure superbuild (Ninja)
-        run: cmake -S superbuild -B superbuild/build -G Ninja -DCMAKE_BUILD_TYPE=Release
+      - name: Configure superbuild (Qt only)
+        run: |
+          cmake -S superbuild -B superbuild/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSUPERBUILD_BUILD_QT=ON \
+            -DSUPERBUILD_BUILD_OPENCV=OFF
 
-      # --- Skip Qt rebuild if the installed prefix already exists ---
       - name: Build & install Qt (Linux/macOS) — only if not already installed
         if: runner.os != 'Windows'
         shell: bash
@@ -117,12 +118,102 @@ jobs:
           test -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake
           echo "Cached Qt prefix is ready."
 
+  # ----------------------------
+  # 2) Build static OpenCV + cache it
+  # ----------------------------
+  opencv:
+    name: OpenCV static • ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+
+    steps:
+      - name: Checkout (with submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install build tools / system deps (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config build-essential \
+            libeigen3-dev libtbb-dev
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew update
+          brew install ninja tbb eigen
+
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+      - name: Set up MSVC dev prompt (Windows)
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Compute OpenCV commit for cache key
+        id: ocvhash
+        shell: bash
+        run: |
+          OCVREF=$(git -C vendor/opencv rev-parse --short HEAD)
+          echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached static OpenCV
+        id: cache-opencv
+        uses: actions/cache@v4
+        with:
+          path: superbuild/build/_opencv
+          key: opencv-static-${{ runner.os }}-${{ steps.ocvhash.outputs.ocvref }}-v1
+          restore-keys: |
+            opencv-static-${{ runner.os }}-
+
+      - name: Configure superbuild (OpenCV only)
+        run: |
+          cmake -S superbuild -B superbuild/build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSUPERBUILD_BUILD_QT=OFF \
+            -DSUPERBUILD_BUILD_OPENCV=ON
+
+      - name: Build & install OpenCV (Linux/macOS) — only if not already installed
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          if [ -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake ]; then
+            echo "OpenCV prefix already present — skipping OpenCV build."
+          else
+            cmake --build superbuild/build --target opencv_static --config Release -j 4
+          fi
+
+      - name: Build & install OpenCV (Windows) — only if not already installed
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path "superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake") {
+            Write-Host "OpenCV prefix already present — skipping OpenCV build."
+          } else {
+            cmake --build superbuild/build --target opencv_static --config Release -j 4
+          }
+
+      - name: Validate cached OpenCV prefix
+        run: |
+          test -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake
+          echo "Cached OpenCV prefix is ready."
+
   # ----------------------------------------
-  # 2) Build the app using the cached static Qt
+  # 3) Build the app using the cached deps
   # ----------------------------------------
   app:
     name: App • ${{ matrix.os }}
-    needs: qt
+    needs: [qt, opencv]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -146,7 +237,7 @@ jobs:
             libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render0-dev \
             libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
-            libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
+            libxkbcommon-dev libxkbcommon-x1 1 libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
             libxtst-dev libxkbfile-dev libxt-dev
 
@@ -154,18 +245,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          # Use LLVM instead of AppleClang so FindOpenMP works
-          brew install ninja llvm libomp
-
-      # Use Homebrew LLVM for OpenMP
-      - name: Use Homebrew LLVM (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          echo "CC=/opt/homebrew/opt/llvm/bin/clang" >> $GITHUB_ENV
-          echo "CXX=/opt/homebrew/opt/llvm/bin/clang++" >> $GITHUB_ENV
-          echo "LDFLAGS=-L/opt/homebrew/opt/llvm/lib -Wl,-rpath,/opt/homebrew/opt/llvm/lib" >> $GITHUB_ENV
-          echo "CPPFLAGS=-I/opt/homebrew/opt/llvm/include" >> $GITHUB_ENV
-          echo "/opt/homebrew/opt/llvm/bin" >> $GITHUB_PATH
+          brew install ninja
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
@@ -179,7 +259,7 @@ jobs:
         with:
           arch: x64
 
-      # IMPORTANT: compute qtref BEFORE restoring cache
+      # Restore both caches for consumption
       - name: Compute Qt commit
         id: qthash
         shell: bash
@@ -191,52 +271,53 @@ jobs:
           fi
           echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
 
+      - name: Compute OpenCV commit
+        id: ocvhash
+        shell: bash
+        run: |
+          OCVREF=$(git -C vendor/opencv rev-parse --short HEAD)
+          echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
+
       - name: Restore cached static Qt
         id: cache-qt
-        uses: actions/cache@v4
+        uses: actions/cache/restore@v4
         with:
           path: superbuild/build/_qt
           key: qt6-static-${{ runner.os }}-${{ steps.qthash.outputs.qtref }}-v1
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # -------- Configure per-OS so OpenCV CPU baselines are correct --------
-      - name: Configure (app-only) with cached Qt (Linux)
-        if: runner.os == 'Linux'
+      - name: Restore cached static OpenCV
+        id: cache-opencv
+        uses: actions/cache/restore@v4
+        with:
+          path: superbuild/build/_opencv
+          key: opencv-static-${{ runner.os }}-${{ steps.ocvhash.outputs.ocvref }}-v1
+          restore-keys: |
+            opencv-static-${{ runner.os }}-
+
+      # ---- Configure & build the app (no dependency builds here) ----
+      - name: Configure app (Linux/macOS)
+        if: runner.os != 'Windows'
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
-            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE="" \
-            -DENABLE_SSE=ON -DENABLE_SSE2=ON \
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF \
-            -DCPU_BASELINE=SSE2 -DCPU_BASELINE_REQUIRE=SSE2 -DCPU_DISPATCH=""
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt;${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DQt6_DIR="${GITHUB_WORKSPACE}/superbuild/build/_qt/lib/cmake/Qt6" \
+            -DOpenCV_DIR="${GITHUB_WORKSPACE}/superbuild/build/_opencv/lib/cmake/opencv4"
 
-      - name: Configure (app-only) with cached Qt (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          cmake -S . -B build -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_SYSTEM_PROCESSOR=arm64 -DCMAKE_OSX_ARCHITECTURES=arm64 \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt" \
-            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF \
-            -DOPENCV_PYTHON_SKIP_DETECTION=ON -DPYTHON_EXECUTABLE="" -DPYTHON_DEFAULT_EXECUTABLE=""
-
-      - name: Configure (app-only, Windows)
+      - name: Configure app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           cmake -S . -B build -G "Ninja Multi-Config" `
-            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt" `
             -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_CXX_FLAGS="/Zc:__cplusplus /permissive- /EHsc /D_HAS_STD_BYTE=0 /DNOMINMAX" `
-            -DBUILD_opencv_python=OFF -DBUILD_opencv_python3=OFF -DBUILD_JAVA=OFF `
-            -DENABLE_SSE=ON -DENABLE_SSE2=ON -DENABLE_SSE3=ON -DENABLE_SSSE3=ON -DENABLE_SSE41=ON -DENABLE_SSE42=ON `
-            -DENABLE_AVX=OFF -DENABLE_AVX2=OFF -DENABLE_AVX512=OFF `
-            -DCPU_DISPATCH=""
+            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt;$env:GITHUB_WORKSPACE\superbuild\build\_opencv" `
+            -DQt6_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_qt\lib\cmake\Qt6" `
+            -DOpenCV_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_opencv\lib\cmake\opencv4" `
+            -DCMAKE_CXX_FLAGS="/U_HAS_STD_BYTE /D_HAS_STD_BYTE=1"
 
-      - name: Build app
+      - name: Build app (Linux/macOS)
         if: runner.os != 'Windows'
         run: cmake --build build -j 4
 
@@ -258,9 +339,7 @@ jobs:
             BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
           fi
           if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
-            echo "Could not locate built binary. Contents of build/:"
-            ls -lah build || true
-            exit 1
+            echo "Could not locate built binary. Contents of build/:"; ls -lah build || true; exit 1
           fi
           echo "Packaging $BIN"
           tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm-linux-x86_64.tar.gz" "$(basename "$BIN")"
@@ -276,9 +355,7 @@ jobs:
           else
             BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
             if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
-              echo "Could not locate app bundle or binary. Contents of build/:"
-              ls -lah build || true
-              exit 1
+              echo "Could not locate app bundle or binary. Contents of build/:"; ls -lah build || true; exit 1
             fi
             echo "Packaging $BIN"
             tar -C "$(dirname "$BIN")" -czf "out/BloonsFarm-macOS.tar.gz" "$(basename "$BIN")"
