@@ -10,10 +10,6 @@ else()
 endif()
 
 # --------------------------------------------------
-# ❶ Find OpenCV
-# --------------------------------------------------
-
-# --------------------------------------------------
 # ❷ Include directories
 # --------------------------------------------------
 include_directories(
@@ -149,9 +145,22 @@ set(WITH_OPENMP ON CACHE BOOL "Enable OpenMP" FORCE)
 set(WITH_OPENCL ON CACHE BOOL "Enable OpenCL" FORCE)
 set(WITH_EIGEN ON CACHE BOOL "Use Eigen for matrix ops" FORCE)
 
+# --- SIMD / CPU features (OpenCV) ---
+# Disable x86 SIMD on macOS (Apple Silicon); enable on others.
+if(APPLE)
+  set(ENABLE_SSE OFF CACHE BOOL "" FORCE)
+  set(ENABLE_AVX OFF CACHE BOOL "" FORCE)
+  # Let OpenCV decide baseline dispatch without forcing x86 requirements
+  set(CPU_BASELINE "" CACHE STRING "" FORCE)
+  set(CPU_DISPATCH "" CACHE STRING "" FORCE)
+  # Optional: NEON is the SIMD extension on arm64; enable if your OpenCV supports it
+  set(ENABLE_NEON ON CACHE BOOL "" FORCE)
+else()
+  set(ENABLE_SSE ON  CACHE BOOL "" FORCE)
+  set(ENABLE_AVX ON  CACHE BOOL "" FORCE)
+endif()
+
 set(ENABLE_FAST_MATH ON CACHE BOOL "Use fast math" FORCE)
-set(ENABLE_AVX ON CACHE BOOL "Enable AVX" FORCE)
-set(ENABLE_SSE ON CACHE BOOL "Enable SSE" FORCE)
 
 find_package(OpenMP REQUIRED)
 target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
@@ -160,7 +169,6 @@ target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenMP::OpenMP_CXX)
 set(WITH_IPP OFF CACHE BOOL "Disable IPP" FORCE)
 set(WITH_ITT OFF CACHE BOOL "Disable ITT" FORCE)
 set(WITH_IPP_A OFF CACHE BOOL "Disable IPP Async" FORCE)
-
 
 add_subdirectory(vendor/opencv ${CMAKE_BINARY_DIR}/vendor/opencv-build)
 include_directories(vendor/opencv/include)
