@@ -46,6 +46,12 @@ else()
     qt_add_executable(BloonsFarm ${SOURCES})
 endif()
 
+# ===== Option A: force-enable std::byte on MSVC (fixes CI with /D_HAS_STD_BYTE=0) =====
+if (MSVC)
+    target_compile_definitions(BloonsFarm PRIVATE _HAS_STD_BYTE=1)
+endif()
+# ======================================================================================
+
 # ---------- Windows: EXE icon via .rc ----------
 if (WIN32)
   # Absolute path to your .ico in the source tree
@@ -186,11 +192,9 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
         vendor/opencv/modules/world/include
 )
 
-
 include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
 RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
-
