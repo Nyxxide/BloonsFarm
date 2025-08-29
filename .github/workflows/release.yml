@@ -2,11 +2,11 @@ name: Build and Release
 
 on:
   push:
-    tags: [ "v*" ]     # create a tag like v1.0.0 to publish a release
-  workflow_dispatch:    # manual run (uploads as build artifacts, not a release)
+    tags: [ "v*" ]
+  workflow_dispatch:
 
 permissions:
-  contents: write       # needed for publishing release assets
+  contents: write
 
 jobs:
   # ----------------------------
@@ -21,10 +21,14 @@ jobs:
         os: [ubuntu-24.04, windows-2022, macos-14]
 
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout (no submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          fetch-depth: 0
+
+      - name: "Init submodule: vendor/qt (shallow)"
+        run: git submodule update --init --depth 1 vendor/qt
 
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux'
@@ -70,11 +74,7 @@ jobs:
         id: qthash
         shell: bash
         run: |
-          if [ -d vendor/qt/.git ]; then
-            QTREF=$(git -C vendor/qt rev-parse --short HEAD)
-          else
-            QTREF=$(git rev-parse --short HEAD)
-          fi
+          QTREF=$(git -C vendor/qt rev-parse --short HEAD)
           echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
 
       - name: Restore cached static Qt
@@ -130,10 +130,14 @@ jobs:
         os: [ubuntu-24.04, windows-2022, macos-14]
 
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout (no submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          fetch-depth: 0
+
+      - name: "Init submodule: vendor/opencv (shallow)"
+        run: git submodule update --init --depth 1 vendor/opencv
 
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux'
@@ -221,10 +225,17 @@ jobs:
         os: [ubuntu-24.04, windows-2022, macos-14]
 
     steps:
-      - name: Checkout (with submodules)
+      - name: Checkout (no submodules)
         uses: actions/checkout@v4
         with:
-          submodules: recursive
+          submodules: false
+          fetch-depth: 0
+
+      - name: "Init submodule: vendor/libuiohook (shallow, if present)"
+        run: |
+          if [ -f .gitmodules ] && grep -q "vendor/libuiohook" .gitmodules; then
+            git submodule update --init --depth 1 vendor/libuiohook
+          fi
 
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
@@ -237,7 +248,7 @@ jobs:
             libxcb-keysyms1-dev libxcb-randr0-dev libxcb-render0-dev \
             libxcb-render-util0-dev libxcb-shape0-dev libxcb-shm0-dev \
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
-            libxkbcommon-dev libxkbcommon-x1 1 libgl1-mesa-dev \
+            libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
             libxtst-dev libxkbfile-dev libxt-dev
 
@@ -259,23 +270,19 @@ jobs:
         with:
           arch: x64
 
-      # Restore both caches for consumption
-      - name: Compute Qt commit
+      # Restore both caches for consumption (no submodule checkouts required)
+      - name: Compute Qt commit (from tree, no checkout)
         id: qthash
         shell: bash
         run: |
-          if [ -d vendor/qt/.git ]; then
-            QTREF=$(git -C vendor/qt rev-parse --short HEAD)
-          else
-            QTREF=$(git rev-parse --short HEAD)
-          fi
+          QTREF=$(git ls-tree HEAD vendor/qt | awk '{print $3}' | cut -c1-7)
           echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
 
-      - name: Compute OpenCV commit
+      - name: Compute OpenCV commit (from tree, no checkout)
         id: ocvhash
         shell: bash
         run: |
-          OCVREF=$(git -C vendor/opencv rev-parse --short HEAD)
+          OCVREF=$(git ls-tree HEAD vendor/opencv | awk '{print $3}' | cut -c1-7)
           echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
 
       - name: Restore cached static Qt
@@ -323,8 +330,8 @@ jobs:
 
       - name: Build app (Windows)
         if: runner.os == 'Windows'
-        run: cmake --build build --config Release -j 4
         shell: pwsh
+        run: cmake --build build --config Release -j 4
 
       # -------- package per OS --------
       - name: Package (Linux)
@@ -376,16 +383,14 @@ jobs:
             throw "Could not locate $APP.exe"
           }
 
-      # Upload as build artifacts on manual runs
-      - name: Upload build artifacts
+      - name: Upload build artifacts (manual runs)
         if: github.event_name == 'workflow_dispatch'
         uses: actions/upload-artifact@v4
         with:
           name: ${{ runner.os }}-binaries
           path: out/*
 
-      # Upload to GitHub Release on tags
-      - name: Publish to GitHub Release
+      - name: Publish to GitHub Release (tags)
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
