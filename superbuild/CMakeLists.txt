@@ -176,6 +176,7 @@ if (WIN32)
     list(APPEND _APP_ARGS
         ${APP_MSVC_RUNTIME_ARG}
         -DQT_STATIC=ON          # let your app conditionally add -DQT_STATIC if it wants
+        -DCMAKE_CXX_FLAGS=/U_HAS_STD_BYTE\ /D_HAS_STD_BYTE=1
     )
 endif()
 

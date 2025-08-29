@@ -44,7 +44,7 @@ endif()
 
 # ===== Option A: force-enable std::byte on MSVC (fixes CI with /D_HAS_STD_BYTE=0) =====
 if (MSVC)
-    target_compile_definitions(BloonsFarm PRIVATE _HAS_STD_BYTE=1)
+    target_compile_options(BloonsFarm PRIVATE /U_HAS_STD_BYTE /D_HAS_STD_BYTE=1)
 endif()
 # ======================================================================================
 
