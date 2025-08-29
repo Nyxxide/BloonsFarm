@@ -27,11 +27,26 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      - name: "Init submodule: vendor/qt (shallow)"
-        run: git submodule update --init --depth 1 vendor/qt
+      # Use the pinned submodule SHA from the repo tree; no need to init the submodule
+      - name: Compute Qt commit for cache key (from tree)
+        id: qthash
+        shell: bash
+        run: |
+          QTREF=$(git ls-tree HEAD vendor/qt | awk '{print $3}' | cut -c1-7)
+          echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
 
+      - name: Restore cached static Qt
+        id: cache-qt
+        uses: actions/cache@v4
+        with:
+          path: superbuild/build/_qt
+          key: qt6-static-${{ runner.os }}-${{ steps.qthash.outputs.qtref }}-v1
+          restore-keys: |
+            qt6-static-${{ runner.os }}-
+
+      # --- only install tools / fetch sources / build IF cache miss ---
       - name: Install build tools / system deps (Linux)
-        if: runner.os == 'Linux'
+        if: runner.os == 'Linux' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
           sudo apt-get install -y ninja-build pkg-config build-essential perl \
@@ -45,78 +60,54 @@ jobs:
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev
 
       - name: Install build tools (macOS)
-        if: runner.os == 'macOS'
+        if: runner.os == 'macOS' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           brew update
           brew install ninja
 
       - name: Install build tools (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
         shell: pwsh
         run: |
           choco install ninja -y
           choco install strawberryperl -y
 
       - name: Set up MSVC dev prompt (Windows)
-        if: runner.os == 'Windows'
+        if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
 
+      - name: "Init submodule: vendor/qt (shallow)"
+        if: steps.cache-qt.outputs.cache-hit != 'true'
+        run: git submodule update --init --depth 1 vendor/qt
+
       - name: Initialize Qt modules (only if using qt super-repo)
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ ! -d "vendor/qt/qtbase" ] && [ -f "vendor/qt/init-repository" ]; then
+          if [ -f "vendor/qt/init-repository" ] && [ ! -d "vendor/qt/qtbase" ]; then
             (cd vendor/qt && perl init-repository --module-subset=qtbase)
           fi
 
-      - name: Compute Qt commit for cache key
-        id: qthash
-        shell: bash
-        run: |
-          QTREF=$(git -C vendor/qt rev-parse --short HEAD)
-          echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
-
-      - name: Restore cached static Qt
-        id: cache-qt
-        uses: actions/cache@v4
-        with:
-          path: superbuild/build/_qt
-          key: qt6-static-${{ runner.os }}-${{ steps.qthash.outputs.qtref }}-v1
-          restore-keys: |
-            qt6-static-${{ runner.os }}-
-
       - name: Configure superbuild (Qt only)
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           cmake -S superbuild -B superbuild/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DSUPERBUILD_BUILD_QT=ON \
             -DSUPERBUILD_BUILD_OPENCV=OFF
 
-      - name: Build & install Qt (Linux/macOS) — only if not already installed
-        if: runner.os != 'Windows'
+      - name: Build & install Qt
+        if: steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake ]; then
-            echo "Qt prefix already present — skipping Qt build."
-          else
-            cmake --build superbuild/build --target qtbase_static --config Release -j 4
-          fi
+          cmake --build superbuild/build --target qtbase_static --config Release -j 4
 
-      - name: Build & install Qt (Windows) — only if not already installed
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (Test-Path "superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake") {
-            Write-Host "Qt prefix already present — skipping Qt build."
-          } else {
-            cmake --build superbuild/build --target qtbase_static --config Release -j 4
-          }
-
-      - name: Validate cached Qt prefix
+      - name: Validate Qt prefix (cached or built)
         run: |
           test -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake
-          echo "Cached Qt prefix is ready."
+          echo "Qt prefix is ready."
 
   # ----------------------------
   # 2) Build static OpenCV + cache it
@@ -136,39 +127,11 @@ jobs:
           submodules: false
           fetch-depth: 0
 
-      - name: "Init submodule: vendor/opencv (shallow)"
-        run: git submodule update --init --depth 1 vendor/opencv
-
-      - name: Install build tools / system deps (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config build-essential \
-            libeigen3-dev libtbb-dev
-
-      - name: Install build tools (macOS)
-        if: runner.os == 'macOS'
-        run: |
-          brew update
-          brew install ninja tbb eigen
-
-      - name: Install build tools (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          choco install ninja -y
-
-      - name: Set up MSVC dev prompt (Windows)
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Compute OpenCV commit for cache key
+      - name: Compute OpenCV commit for cache key (from tree)
         id: ocvhash
         shell: bash
         run: |
-          OCVREF=$(git -C vendor/opencv rev-parse --short HEAD)
+          OCVREF=$(git ls-tree HEAD vendor/opencv | awk '{print $3}' | cut -c1-7)
           echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
 
       - name: Restore cached static OpenCV
@@ -180,37 +143,53 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
+      # --- only install tools / fetch sources / build IF cache miss ---
+      - name: Install build tools / system deps (Linux)
+        if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build pkg-config build-essential libeigen3-dev libtbb-dev
+
+      - name: Install build tools (macOS)
+        if: runner.os == 'macOS' && steps.cache-opencv.outputs.cache-hit != 'true'
+        run: |
+          brew update
+          brew install ninja tbb eigen
+
+      - name: Install build tools (Windows)
+        if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          choco install ninja -y
+
+      - name: Set up MSVC dev prompt (Windows)
+        if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: "Init submodule: vendor/opencv (shallow)"
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
+        run: git submodule update --init --depth 1 vendor/opencv
+
       - name: Configure superbuild (OpenCV only)
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
           cmake -S superbuild -B superbuild/build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DSUPERBUILD_BUILD_QT=OFF \
             -DSUPERBUILD_BUILD_OPENCV=ON
 
-      - name: Build & install OpenCV (Linux/macOS) — only if not already installed
-        if: runner.os != 'Windows'
+      - name: Build & install OpenCV
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake ]; then
-            echo "OpenCV prefix already present — skipping OpenCV build."
-          else
-            cmake --build superbuild/build --target opencv_static --config Release -j 4
-          fi
+          cmake --build superbuild/build --target opencv_static --config Release -j 4
 
-      - name: Build & install OpenCV (Windows) — only if not already installed
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          if (Test-Path "superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake") {
-            Write-Host "OpenCV prefix already present — skipping OpenCV build."
-          } else {
-            cmake --build superbuild/build --target opencv_static --config Release -j 4
-          }
-
-      - name: Validate cached OpenCV prefix
+      - name: Validate OpenCV prefix (cached or built)
         run: |
           test -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake
-          echo "Cached OpenCV prefix is ready."
+          echo "OpenCV prefix is ready."
 
   # ----------------------------------------
   # 3) Build the app using the cached deps
@@ -269,39 +248,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-
-      # Restore both caches for consumption (no submodule checkouts required)
-      - name: Compute Qt commit (from tree, no checkout)
-        id: qthash
-        shell: bash
-        run: |
-          QTREF=$(git ls-tree HEAD vendor/qt | awk '{print $3}' | cut -c1-7)
-          echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
-
-      - name: Compute OpenCV commit (from tree, no checkout)
-        id: ocvhash
-        shell: bash
-        run: |
-          OCVREF=$(git ls-tree HEAD vendor/opencv | awk '{print $3}' | cut -c1-7)
-          echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
-
-      - name: Restore cached static Qt
-        id: cache-qt
-        uses: actions/cache/restore@v4
-        with:
-          path: superbuild/build/_qt
-          key: qt6-static-${{ runner.os }}-${{ steps.qthash.outputs.qtref }}-v1
-          restore-keys: |
-            qt6-static-${{ runner.os }}-
-
-      - name: Restore cached static OpenCV
-        id: cache-opencv
-        uses: actions/cache/restore@v4
-        with:
-          path: superbuild/build/_opencv
-          key: opencv-static-${{ runner.os }}-${{ steps.ocvhash.outputs.ocvref }}-v1
-          restore-keys: |
-            opencv-static-${{ runner.os }}-
 
       # ---- Configure & build the app (no dependency builds here) ----
       - name: Configure app (Linux/macOS)
