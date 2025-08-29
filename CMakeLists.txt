@@ -208,20 +208,22 @@ target_include_directories(${CMAKE_PROJECT_NAME} PRIVATE
 
 include_directories(${CMAKE_BINARY_DIR}/opencv2)
 
-# -------- macOS: ensure we link the correct libc++ when using Homebrew LLVM --------
+# -------- macOS: Option A — explicitly link Homebrew libc++/libc++abi --------
 if(APPLE)
   # Resolve the compiler to a real path, then check if it's Homebrew LLVM
   get_filename_component(_CXX_REAL "${CMAKE_CXX_COMPILER}" REALPATH)
   if(_CXX_REAL MATCHES "/opt/homebrew/opt/llvm")
     message(STATUS "Detected Homebrew LLVM at: ${_CXX_REAL}")
-    # Direct the linker to Homebrew's libc++ and embed rpath so it resolves at runtime.
-    target_link_options(BloonsFarm PRIVATE
-      -L/opt/homebrew/opt/llvm/lib
-      -Wl,-rpath,/opt/homebrew/opt/llvm/lib
-      -lc++
-      -lc++abi
-    )
-    # Optional: set a modern deployment target to match CI runners
+
+    # Find the actual dylibs in Homebrew’s prefix (avoid system libc++)
+    find_library(HB_LIBCXX    c++    HINTS /opt/homebrew/opt/llvm/lib NO_DEFAULT_PATH REQUIRED)
+    find_library(HB_LIBCXXABI c++abi HINTS /opt/homebrew/opt/llvm/lib NO_DEFAULT_PATH REQUIRED)
+
+    # Link explicitly and embed rpath so the loader finds them
+    target_link_libraries(BloonsFarm PRIVATE "${HB_LIBCXX}" "${HB_LIBCXXABI}")
+    target_link_options(BloonsFarm PRIVATE -Wl,-rpath,/opt/homebrew/opt/llvm/lib)
+
+    # Keep the deployment target consistent with GH mac runners (optional)
     if(NOT DEFINED CMAKE_OSX_DEPLOYMENT_TARGET)
       set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0" CACHE STRING "" FORCE)
     endif()
