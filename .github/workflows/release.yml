@@ -43,7 +43,7 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # 🔧 Only fetch & build if cache MISS
+      # Only fetch & build if cache MISS --------------------
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
@@ -62,7 +62,7 @@ jobs:
         if: runner.os == 'macOS' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
           brew update
-          brew install ninja
+          brew install ninja perl
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
@@ -77,13 +77,12 @@ jobs:
         with:
           arch: x64
 
-      # 🔧 Get the Qt super-repo AND its nested modules (qtbase)
-      - name: "Init submodule: vendor/qt (recursive, shallow)"
+      # Get the Qt super-repo AND its nested modules (qtbase)
+      - name: "Init submodule: vendor/qt (recursive)"
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
-          git submodule update --init --recursive --depth 1 vendor/qt
+          git submodule update --init --recursive vendor/qt
 
-      # 🔧 If the super-repo uses init-repository, run it too (belt & suspenders)
       - name: "Initialize Qt modules via init-repository (if present)"
         if: steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
@@ -92,26 +91,33 @@ jobs:
             (cd vendor/qt && perl init-repository --module-subset=qtbase)
           fi
 
-      # 🔧 Verify qtbase exists before configuring superbuild
       - name: "Verify qtbase sources present"
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
+          ls -la vendor/qt || true
           test -f vendor/qt/qtbase/CMakeLists.txt || (echo "vendor/qt/qtbase missing; ensure submodules fetched" && exit 1)
 
-      # 🔧 Use a QT-specific build dir to avoid cache/toggle bleed
-      - name: Configure superbuild (Qt only)
-        if: steps.cache-qt.outputs.cache-hit != 'true'
+      # Use a QT-specific build dir
+      - name: Configure superbuild (Qt only) • Linux/macOS
+        if: runner.os != 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          cmake -S superbuild -B superbuild/build-qt -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DSUPERBUILD_BUILD_QT:BOOL=ON \
-            -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
+          cmake -S superbuild -B superbuild/build-qt -G Ninja -DCMAKE_BUILD_TYPE=Release -DSUPERBUILD_BUILD_QT:BOOL=ON -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
+
+      - name: Configure superbuild (Qt only) • Windows
+        if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: >
+          cmake -S superbuild -B superbuild/build-qt -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DSUPERBUILD_BUILD_QT:BOOL=ON
+          -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
 
       - name: Build & install Qt
         if: steps.cache-qt.outputs.cache-hit != 'true'
+        shell: bash
         run: cmake --build superbuild/build-qt --target qtbase_static --config Release -j 4
 
-      # Put the Qt install where the app job expects it
       - name: Move Qt install to canonical path
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: |
@@ -158,7 +164,7 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      # Only fetch & build if cache MISS
+      # Only fetch & build if cache MISS --------------------
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -187,17 +193,25 @@ jobs:
         if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: git submodule update --init --depth 1 vendor/opencv
 
-      # 🔧 Use an OCV-specific build dir to avoid toggle bleed
-      - name: Configure superbuild (OpenCV only)
-        if: steps.cache-opencv.outputs.cache-hit != 'true'
+      # Use an OCV-specific build dir
+      - name: Configure superbuild (OpenCV only) • Linux/macOS
+        if: runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: bash
         run: |
-          cmake -S superbuild -B superbuild/build-ocv -G Ninja \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DSUPERBUILD_BUILD_QT:BOOL=OFF \
-            -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
+          cmake -S superbuild -B superbuild/build-ocv -G Ninja -DCMAKE_BUILD_TYPE=Release -DSUPERBUILD_BUILD_QT:BOOL=OFF -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
+
+      - name: Configure superbuild (OpenCV only) • Windows
+        if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: >
+          cmake -S superbuild -B superbuild/build-ocv -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DSUPERBUILD_BUILD_QT:BOOL=OFF
+          -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
 
       - name: Build & install OpenCV
         if: steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: bash
         run: cmake --build superbuild/build-ocv --target opencv_static --config Release -j 4
 
       - name: Move OpenCV install to canonical path
@@ -272,6 +286,7 @@ jobs:
 
       - name: Configure app (Linux/macOS)
         if: runner.os != 'Windows'
+        shell: bash
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
@@ -282,13 +297,13 @@ jobs:
       - name: Configure app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          cmake -S . -B build -G "Ninja Multi-Config" `
-            -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded `
-            -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt;$env:GITHUB_WORKSPACE\superbuild\build\_opencv" `
-            -DQt6_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_qt\lib\cmake\Qt6" `
-            -DOpenCV_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_opencv\lib\cmake\opencv4" `
-            -DCMAKE_CXX_FLAGS="/U_HAS_STD_BYTE /D_HAS_STD_BYTE=1"
+        run: >
+          cmake -S . -B build -G "Ninja Multi-Config"
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt;$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          -DQt6_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_qt\lib\cmake\Qt6"
+          -DOpenCV_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_opencv\lib\cmake\opencv4"
+          -DCMAKE_CXX_FLAGS="/U_HAS_STD_BYTE /D_HAS_STD_BYTE=1"
 
       - name: Build app (Linux/macOS)
         if: runner.os != 'Windows'
