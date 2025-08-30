@@ -1,0 +1,57 @@
+name: Cache Keepalive
+
+on:
+  # Runs twice a week (Sun & Wed at 06:00 UTC) so the caches are always touched < 7 days apart.
+  schedule:
+    - cron: '0 6 * * 0,3'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Keep each OS's cache warm (caches are keyed with runner.os in your build)
+jobs:
+  refresh:
+    name: Refresh caches • ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2022, macos-14]
+
+    steps:
+      - name: Checkout (no submodules)
+        uses: actions/checkout@v4
+        with:
+          submodules: false
+          fetch-depth: 0
+
+      # Compute the same short SHAs you use in your cache keys
+      - name: Compute cache keys
+        id: keys
+        shell: bash
+        run: |
+          set -euo pipefail
+          QTREF=$(git ls-tree HEAD vendor/qt     | awk '{print $3}' | cut -c1-7 || true)
+          OCVREF=$(git ls-tree HEAD vendor/opencv | awk '{print $3}' | cut -c1-7 || true)
+          echo "qtkey=qt6-static-${{ runner.os }}-${QTREF}-v1"   >> "$GITHUB_OUTPUT"
+          echo "ocvkey=opencv-static-${{ runner.os }}-${OCVREF}-v1" >> "$GITHUB_OUTPUT"
+
+      # Just restoring counts as "access" and resets the inactivity timer.
+      - name: Restore Qt cache (keepalive)
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/cache-keepalive/_qt
+          key: ${{ steps.keys.outputs.qtkey }}
+
+      - name: Restore OpenCV cache (keepalive)
+        uses: actions/cache/restore@v4
+        with:
+          path: tmp/cache-keepalive/_opencv
+          key: ${{ steps.keys.outputs.ocvkey }}
+
+      # Optional: show what we actually touched (kept light to avoid wasting minutes)
+      - name: Quick listing (optional)
+        shell: bash
+        run: |
+          du -sh tmp/cache-keepalive/* || true

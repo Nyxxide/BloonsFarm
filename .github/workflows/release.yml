@@ -2,7 +2,7 @@ name: Build and Release
 
 on:
   push:
-    tags: [ "v*" ]
+    branches: [ "main" ]  # ← change if your default branch is different
   workflow_dispatch:
 
 permissions:
@@ -546,18 +546,34 @@ jobs:
             throw "Could not locate $APP.exe"
           }
 
-      - name: Upload build artifacts (manual runs)
-        if: github.event_name == 'workflow_dispatch'
-        uses: actions/upload-artifact@v4
-        with:
-          name: ${{ runner.os }}-binaries
-          path: out/*
+      # -------------------------------
+      # Versioned release per push
+      # -------------------------------
 
-      - name: Publish to GitHub Release (tags)
-        if: startsWith(github.ref, 'refs/tags/')
-        uses: softprops/action-gh-release@v2
+      - name: Read version from repo
+        id: ver
+        shell: bash
+        run: |
+          if [ ! -f VERSION ]; then
+            echo "VERSION file missing. Create a file named 'VERSION' with e.g. 1.2.3" >&2
+            exit 1
+          fi
+          BASE="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' VERSION)"
+          BASE="${BASE#v}"                         # strip a leading v if present
+          echo "base=v${BASE}"        >> "$GITHUB_OUTPUT"
+          echo "tag=v${BASE}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
+          echo "name=BloonsFarm v${BASE} (build ${GITHUB_RUN_NUMBER})" >> "$GITHUB_OUTPUT"
+
+      - name: Publish versioned release
+        uses: ncipollo/release-action@v1
         with:
-          files: |
-            out/*
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tag: ${{ steps.ver.outputs.tag }}             # vX.Y.Z-RUN
+          name: ${{ steps.ver.outputs.name }}           # nice display name
+          allowUpdates: true                            # append assets from other OS jobs
+          makeLatest: true
+          prerelease: false
+          replacesArtifacts: false                      # keep assets; don't wipe on updates
+          omitBodyDuringUpdate: true
+          omitNameDuringUpdate: true
+          artifacts: "out/*"
+          token: ${{ secrets.GITHUB_TOKEN }}
