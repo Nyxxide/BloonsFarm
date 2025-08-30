@@ -112,15 +112,44 @@ jobs:
         if: steps.cache-qt.outputs.cache-hit != 'true'
         run: cmake --build superbuild/build-qt --target qtbase_static --config Release -j 4
 
-      - name: Move Qt install to canonical path
-        if: steps.cache-qt.outputs.cache-hit != 'true'
+      # Canonicalize the Qt install path for downstream jobs
+      - name: Move Qt install to canonical path • Linux/macOS
+        if: runner.os != 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
+        shell: bash
         run: |
           mkdir -p superbuild/build
           rm -rf superbuild/build/_qt
           mv superbuild/build-qt/_qt superbuild/build/_qt
 
-      - name: Validate Qt prefix (cached or built)
+      - name: Move Qt install to canonical path • Windows
+        if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
+        shell: pwsh
         run: |
+          $dstRoot = Join-Path $env:GITHUB_WORKSPACE "superbuild/build"
+          New-Item -ItemType Directory -Force -Path $dstRoot | Out-Null
+          $dst = Join-Path $dstRoot "_qt"
+          if (Test-Path $dst) { Remove-Item -Recurse -Force $dst }
+          $src = Join-Path $env:GITHUB_WORKSPACE "superbuild/build-qt/_qt"
+          Move-Item $src $dst
+
+      - name: Validate Qt prefix (cached or built) • Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $cfg = "$env:GITHUB_WORKSPACE\superbuild\build\_qt\lib\cmake\Qt6\Qt6Config.cmake"
+          if (Test-Path $cfg) {
+            Write-Host "Qt prefix OK: $cfg"
+          } else {
+            Write-Host "Qt6Config.cmake not found. Tree:"
+            Get-ChildItem -Recurse -Depth 4 "$env:GITHUB_WORKSPACE\superbuild\build\_qt" | Select-Object FullName | Out-String -Width 200 | Write-Host
+            throw "Qt6Config.cmake not found."
+          }
+
+      - name: Validate Qt prefix (cached or built) • Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
           test -f superbuild/build/_qt/lib/cmake/Qt6/Qt6Config.cmake
           echo "Qt prefix is ready."
 
@@ -239,10 +268,36 @@ jobs:
         if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: cmake --install superbuild/ocv-src --config Release
 
-      - name: Validate OpenCV prefix (cached or built)
+      - name: Validate OpenCV prefix (cached or built) • Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
         run: |
-          test -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake
-          echo "OpenCV prefix is ready."
+          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $cfg1 = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
+          $cfg2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
+          if (Test-Path $cfg1) {
+            Write-Host "OpenCV prefix OK: $cfg1"
+          } elseif (Test-Path $cfg2) {
+            Write-Host "OpenCV prefix OK: $cfg2"
+          } else {
+            Write-Host "OpenCVConfig.cmake not found. Installed tree under $prefix:"
+            Get-ChildItem -Recurse -Depth 4 $prefix | Select-Object FullName | Out-String -Width 200 | Write-Host
+            throw "OpenCVConfig.cmake not found in expected locations."
+          }
+
+      - name: Validate OpenCV prefix (cached or built) • Linux/macOS
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -e
+          if [ -f superbuild/build/_opencv/lib/cmake/opencv4/OpenCVConfig.cmake ]; then
+            echo "OpenCV prefix OK: lib/cmake/opencv4"
+          elif [ -f superbuild/build/_opencv/share/opencv4/OpenCVConfig.cmake ]; then
+            echo "OpenCV prefix OK: share/opencv4"
+          else
+            echo "OpenCVConfig.cmake not found. Tree:"; find superbuild/build/_opencv -maxdepth 4 -print
+            exit 1
+          fi
 
   # ----------------------------------------
   # 3) Build the app using the cached deps
