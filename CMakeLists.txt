@@ -114,16 +114,19 @@ elseif (UNIX)
 endif()
 
 # --------------------------------------------------
-# Eigen & OpenCV (order matters!)
-#   - On Linux/mac: require Eigen, since OpenCV was built WITH_EIGEN=ON
-#   - On Windows: OpenCV is built WITH_EIGEN=OFF, so Eigen is optional
+# OpenCV + Eigen + TBB
 # --------------------------------------------------
-if (WIN32)
-  find_package(Eigen3 3.3 QUIET CONFIG)
+# Eigen: header-only. Required on UNIX/APPLE; quiet on Windows to avoid spurious failures.
+if(WIN32)
+  find_package(Eigen3 3.3 QUIET)
 else()
   find_package(Eigen3 3.3 REQUIRED)
 endif()
+if(TARGET Eigen3::Eigen)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Eigen3::Eigen)
+endif()
 
+# OpenCV (from superbuild)
 find_package(OpenCV CONFIG REQUIRED)
 
 # Prefer the world lib we built; fall back to components if needed.
@@ -143,14 +146,21 @@ else()
   message(FATAL_ERROR "OpenCV targets not found. Check OpenCV_DIR / CMAKE_PREFIX_PATH.")
 endif()
 
-# Satisfy OpenCV's interface deps explicitly (Eigen, TBB) when available.
-if (TARGET Eigen3::Eigen)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Eigen3::Eigen)
-endif()
-
-find_package(TBB QUIET)
-if (TBB_FOUND)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE TBB::tbb)
+# TBB: OpenCV may add a raw -ltbb on *nix/mac; make sure it's resolvable.
+if(APPLE)
+  find_package(TBB REQUIRED)                         # we brew install tbb in CI
+  target_link_libraries(BloonsFarm PRIVATE TBB::tbb)
+  # Ensure the stray '-ltbb' from OpenCV can be resolved by ld.
+  if(EXISTS "/opt/homebrew/lib")
+    target_link_directories(BloonsFarm PRIVATE /opt/homebrew/lib)
+  elseif(EXISTS "/usr/local/lib")
+    target_link_directories(BloonsFarm PRIVATE /usr/local/lib)
+  endif()
+elseif(UNIX)  # Linux
+  find_package(TBB QUIET)                           # libtbb-dev provides the libs; config may or may not exist
+  if(TARGET TBB::tbb)
+    target_link_libraries(BloonsFarm PRIVATE TBB::tbb)
+  endif()
 endif()
 
 # Optional: put binary in /build

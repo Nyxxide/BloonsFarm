@@ -301,7 +301,7 @@ jobs:
           -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
           -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF
           -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF
-          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=OFF
+          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON
           -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
@@ -452,7 +452,7 @@ jobs:
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja eigen tbb
+          brew install ninja tbb eigen
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
@@ -472,7 +472,7 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt;${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt;${GITHUB_WORKSPACE}/superbuild/build/_opencv;/opt/homebrew" \
             -DQt6_DIR="${GITHUB_WORKSPACE}/superbuild/build/_qt/lib/cmake/Qt6" \
             -DOpenCV_DIR="${GITHUB_WORKSPACE}/superbuild/build/_opencv/lib/cmake/opencv4"
 
