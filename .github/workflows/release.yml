@@ -43,7 +43,7 @@ jobs:
           restore-keys: |
             qt6-static-${{ runner.os }}-
 
-      # Only fetch & build if cache MISS --------------------
+      # Only fetch & build if cache MISS
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-qt.outputs.cache-hit != 'true'
         run: |
@@ -77,32 +77,27 @@ jobs:
         with:
           arch: x64
 
-      # Get the Qt super-repo AND its nested modules (qtbase)
-      - name: "Init submodule: vendor/qt (recursive)"
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: |
-          git submodule update --init --recursive vendor/qt
-
-      - name: "Initialize Qt modules via init-repository (if present)"
+      - name: "Ensure qtbase sources present"
         if: steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          if [ -f "vendor/qt/init-repository" ]; then
-            (cd vendor/qt && perl init-repository --module-subset=qtbase)
+          set -euo pipefail
+          git submodule update --init --recursive vendor/qt
+          if [ ! -f vendor/qt/qtbase/CMakeLists.txt ]; then
+            if [ -f vendor/qt/init-repository ]; then
+              (cd vendor/qt && perl init-repository --module-subset=qtbase) || true
+            fi
           fi
+          test -f vendor/qt/qtbase/CMakeLists.txt
 
-      - name: "Verify qtbase sources present"
-        if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: |
-          ls -la vendor/qt || true
-          test -f vendor/qt/qtbase/CMakeLists.txt || (echo "vendor/qt/qtbase missing; ensure submodules fetched" && exit 1)
-
-      # Use a QT-specific build dir
       - name: Configure superbuild (Qt only) • Linux/macOS
         if: runner.os != 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
         shell: bash
         run: |
-          cmake -S superbuild -B superbuild/build-qt -G Ninja -DCMAKE_BUILD_TYPE=Release -DSUPERBUILD_BUILD_QT:BOOL=ON -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
+          cmake -S superbuild -B superbuild/build-qt -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSUPERBUILD_BUILD_QT:BOOL=ON \
+            -DSUPERBUILD_BUILD_OPENCV:BOOL=OFF
 
       - name: Configure superbuild (Qt only) • Windows
         if: runner.os == 'Windows' && steps.cache-qt.outputs.cache-hit != 'true'
@@ -115,7 +110,6 @@ jobs:
 
       - name: Build & install Qt
         if: steps.cache-qt.outputs.cache-hit != 'true'
-        shell: bash
         run: cmake --build superbuild/build-qt --target qtbase_static --config Release -j 4
 
       - name: Move Qt install to canonical path
@@ -131,7 +125,7 @@ jobs:
           echo "Qt prefix is ready."
 
   # ----------------------------
-  # 2) Build static OpenCV + cache it
+  # 2) Build static OpenCV + cache it (direct build on cache miss)
   # ----------------------------
   opencv:
     name: OpenCV static • ${{ matrix.os }}
@@ -164,7 +158,7 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      # Only fetch & build if cache MISS --------------------
+      # Only fetch & build if cache MISS
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -193,33 +187,57 @@ jobs:
         if: steps.cache-opencv.outputs.cache-hit != 'true'
         run: git submodule update --init --depth 1 vendor/opencv
 
-      # Use an OCV-specific build dir
-      - name: Configure superbuild (OpenCV only) • Linux/macOS
-        if: runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
-        shell: bash
+      # Configure & build OpenCV directly into _opencv
+      - name: Configure OpenCV (Linux)
+        if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
-          cmake -S superbuild -B superbuild/build-ocv -G Ninja -DCMAKE_BUILD_TYPE=Release -DSUPERBUILD_BUILD_QT:BOOL=OFF -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
+          cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON \
+            -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
+            -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF \
+            -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
+            -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
 
-      - name: Configure superbuild (OpenCV only) • Windows
+      - name: Configure OpenCV (macOS arm64)
+        if: runner.os == 'macOS' && steps.cache-opencv.outputs.cache-hit != 'true'
+        run: |
+          cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON \
+            -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
+            -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
+            -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF \
+            -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
+            -DENABLE_FAST_MATH=ON -DWITH_OPENMP=OFF \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
+            -DENABLE_SSE=OFF -DENABLE_AVX=OFF -DCPU_BASELINE= -DCPU_DISPATCH= -DENABLE_NEON=ON
+
+      - name: Configure OpenCV (Windows)
         if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
         shell: pwsh
         run: >
-          cmake -S superbuild -B superbuild/build-ocv -G Ninja
+          cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DSUPERBUILD_BUILD_QT:BOOL=OFF
-          -DSUPERBUILD_BUILD_OPENCV:BOOL=ON
+          -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON
+          -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
+          -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF
+          -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF
+          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON
+          -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
+          -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
-      - name: Build & install OpenCV
+      - name: Build OpenCV
         if: steps.cache-opencv.outputs.cache-hit != 'true'
-        shell: bash
-        run: cmake --build superbuild/build-ocv --target opencv_static --config Release -j 4
+        run: cmake --build superbuild/ocv-src --config Release -j 4
 
-      - name: Move OpenCV install to canonical path
+      - name: Install OpenCV
         if: steps.cache-opencv.outputs.cache-hit != 'true'
-        run: |
-          mkdir -p superbuild/build
-          rm -rf superbuild/build/_opencv
-          mv superbuild/build-ocv/_opencv superbuild/build/_opencv
+        run: cmake --install superbuild/ocv-src --config Release
 
       - name: Validate OpenCV prefix (cached or built)
         run: |
@@ -244,6 +262,39 @@ jobs:
         with:
           submodules: false
           fetch-depth: 0
+
+      # Restore both caches for consumption in this job
+      - name: Compute Qt commit (from tree)
+        id: qthash
+        shell: bash
+        run: |
+          QTREF=$(git ls-tree HEAD vendor/qt | awk '{print $3}' | cut -c1-7)
+          echo "qtref=$QTREF" >> "$GITHUB_OUTPUT"
+
+      - name: Compute OpenCV commit (from tree)
+        id: ocvhash
+        shell: bash
+        run: |
+          OCVREF=$(git ls-tree HEAD vendor/opencv | awk '{print $3}' | cut -c1-7)
+          echo "ocvref=$OCVREF" >> "$GITHUB_OUTPUT"
+
+      - name: Restore cached static Qt
+        id: cache-qt
+        uses: actions/cache/restore@v4
+        with:
+          path: superbuild/build/_qt
+          key: qt6-static-${{ runner.os }}-${{ steps.qthash.outputs.qtref }}-v1
+          restore-keys: |
+            qt6-static-${{ runner.os }}-
+
+      - name: Restore cached static OpenCV
+        id: cache-opencv
+        uses: actions/cache/restore@v4
+        with:
+          path: superbuild/build/_opencv
+          key: opencv-static-${{ runner.os }}-${{ steps.ocvhash.outputs.ocvref }}-v1
+          restore-keys: |
+            opencv-static-${{ runner.os }}-
 
       - name: "Init submodule: vendor/libuiohook (shallow, if present)"
         run: |
@@ -284,6 +335,7 @@ jobs:
         with:
           arch: x64
 
+      # ---- Configure & build the app ----
       - name: Configure app (Linux/macOS)
         if: runner.os != 'Windows'
         shell: bash
@@ -314,6 +366,7 @@ jobs:
         shell: pwsh
         run: cmake --build build --config Release -j 4
 
+      # -------- package per OS --------
       - name: Package (Linux)
         if: runner.os == 'Linux'
         shell: bash
