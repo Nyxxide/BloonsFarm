@@ -301,7 +301,7 @@ jobs:
           -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
           -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF
           -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF
-          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON
+          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=OFF
           -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
@@ -312,31 +312,6 @@ jobs:
       - name: Install OpenCV
         if: (runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'yes') || (runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true')
         run: cmake --build superbuild/ocv-src --target install --config Release --parallel
-
-      # If Windows cache HIT but package missing, do an emergency install now (no deep scans)
-      - name: Ensure OpenCV package exists (Windows emergency path)
-        if: runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'no'
-        shell: pwsh
-        run: |
-          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          $hasPkg = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
-                    (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
-          if (-not $hasPkg) {
-            Write-Host "OpenCV package missing in cache; performing quick configure/install."
-            cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja `
-              -DCMAKE_BUILD_TYPE=Release `
-              -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/superbuild/build/_opencv" `
-              -DCMAKE_INSTALL_LIBDIR=lib `
-              -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON `
-              -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF `
-              -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF `
-              -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF `
-              -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON `
-              -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON `
-              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
-            cmake --build superbuild/ocv-src --config Release --parallel
-            cmake --build superbuild/ocv-src --target install --config Release --parallel
-          }
 
       - name: Validate OpenCV prefix (cached or built) • Windows
         if: runner.os == 'Windows'
@@ -471,13 +446,13 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
             libxtst-dev libxkbfile-dev libxt-dev \
-            libeigen3-dev
+            libeigen3-dev libtbb-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja eigen
+          brew install ninja eigen tbb
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'

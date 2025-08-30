@@ -2,10 +2,10 @@ cmake_minimum_required(VERSION 3.29)
 
 # --- macOS toolchain: force AppleClang + arm64 ---
 if(APPLE)
-  set(CMAKE_C_COMPILER          "/usr/bin/clang"   CACHE STRING "" FORCE)
-  set(CMAKE_CXX_COMPILER        "/usr/bin/clang++" CACHE STRING "" FORCE)
-  set(CMAKE_OSX_ARCHITECTURES   "arm64"            CACHE STRING "" FORCE)
-  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0"           CACHE STRING "" FORCE)
+  set(CMAKE_C_COMPILER            "/usr/bin/clang"   CACHE STRING "" FORCE)
+  set(CMAKE_CXX_COMPILER          "/usr/bin/clang++" CACHE STRING "" FORCE)
+  set(CMAKE_OSX_ARCHITECTURES     "arm64"            CACHE STRING "" FORCE)
+  set(CMAKE_OSX_DEPLOYMENT_TARGET "13.0"             CACHE STRING "" FORCE)
 endif()
 
 project(BloonsFarm LANGUAGES C CXX)
@@ -114,27 +114,43 @@ elseif (UNIX)
 endif()
 
 # --------------------------------------------------
-# OpenCV + Eigen (Eigen is header-only)
+# Eigen & OpenCV (order matters!)
+#   - On Linux/mac: require Eigen, since OpenCV was built WITH_EIGEN=ON
+#   - On Windows: OpenCV is built WITH_EIGEN=OFF, so Eigen is optional
 # --------------------------------------------------
-find_package(Eigen3 3.3 REQUIRED)         # ensure Eigen3::Eigen exists
-find_package(OpenCV CONFIG REQUIRED)       # uses superbuild-provided config
+if (WIN32)
+  find_package(Eigen3 3.3 QUIET CONFIG)
+else()
+  find_package(Eigen3 3.3 REQUIRED)
+endif()
+
+find_package(OpenCV CONFIG REQUIRED)
 
 # Prefer the world lib we built; fall back to components if needed.
 if (TARGET opencv_world)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world Eigen3::Eigen)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE opencv_world)
 elseif (TARGET OpenCV::opencv_world)
-  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenCV::opencv_world Eigen3::Eigen)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE OpenCV::opencv_world)
 elseif (TARGET opencv_core OR TARGET OpenCV::opencv_core)
-  # Try un-namespaced first (most OpenCV configs), then namespaced if present.
   if (TARGET opencv_core)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-      opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs Eigen3::Eigen)
+      opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs)
   else()
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-      OpenCV::opencv_core OpenCV::opencv_imgproc OpenCV::opencv_highgui OpenCV::opencv_imgcodecs Eigen3::Eigen)
+      OpenCV::opencv_core OpenCV::opencv_imgproc OpenCV::opencv_highgui OpenCV::opencv_imgcodecs)
   endif()
 else()
   message(FATAL_ERROR "OpenCV targets not found. Check OpenCV_DIR / CMAKE_PREFIX_PATH.")
+endif()
+
+# Satisfy OpenCV's interface deps explicitly (Eigen, TBB) when available.
+if (TARGET Eigen3::Eigen)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE Eigen3::Eigen)
+endif()
+
+find_package(TBB QUIET)
+if (TBB_FOUND)
+  target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE TBB::tbb)
 endif()
 
 # Optional: put binary in /build
