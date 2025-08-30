@@ -338,37 +338,6 @@ jobs:
             cmake --build superbuild/ocv-src --target install --config Release --parallel
           }
 
-      # Normalize via install manifest; no long recursive scans
-      - name: Normalize OpenCV CMake package (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $prefix   = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          $canonDir = Join-Path $prefix "lib\cmake\opencv4"
-          $canonCfg = Join-Path $canonDir "OpenCVConfig.cmake"
-
-          if (Test-Path $canonCfg) { Write-Host "Canonical package already in place."; exit 0 }
-
-          $manifest = Join-Path "$env:GITHUB_WORKSPACE\superbuild\ocv-src" "install_manifest.txt"
-          if (Test-Path $manifest) {
-            $line = Get-Content $manifest | Where-Object { $_ -match "OpenCVConfig\.cmake$" } | Select-Object -First 1
-            if ($line) {
-              $srcDir = Split-Path $line -Parent
-              New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
-              Copy-Item -Path (Join-Path $srcDir '*') -Destination $canonDir -Recurse -Force
-              Write-Host ("Normalized OpenCV package from {0} to {1}" -f $srcDir, $canonDir)
-              exit 0
-            }
-          }
-
-          # Fallback: check the two standard locations only (no deep recursion)
-          $std2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
-          if (Test-Path $std2) {
-            New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
-            Copy-Item -Path (Split-Path $std2 -Parent | Join-Path -ChildPath '*') -Destination $canonDir -Recurse -Force
-            Write-Host ("Copied from share/opencv4 to {0}" -f $canonDir)
-          }
-
       - name: Validate OpenCV prefix (cached or built) • Windows
         if: runner.os == 'Windows'
         timeout-minutes: 1
@@ -501,13 +470,14 @@ jobs:
             libxcb-sync-dev libxcb-xfixes0-dev libxcb-xinerama0-dev libxcb-xkb-dev \
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
-            libxtst-dev libxkbfile-dev libxt-dev
+            libxtst-dev libxkbfile-dev libxt-dev \
+            libeigen3-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja
+          brew install ninja eigen
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
