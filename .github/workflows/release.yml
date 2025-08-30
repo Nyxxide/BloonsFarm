@@ -280,7 +280,7 @@ jobs:
           } elseif (Test-Path $cfg2) {
             Write-Host "OpenCV prefix OK: $cfg2"
           } else {
-            Write-Host "OpenCVConfig.cmake not found. Installed tree under $prefix:"
+            Write-Host ("OpenCVConfig.cmake not found. Installed tree under {0}:" -f $prefix)
             Get-ChildItem -Recurse -Depth 4 $prefix | Select-Object FullName | Out-String -Width 200 | Write-Host
             throw "OpenCVConfig.cmake not found in expected locations."
           }
