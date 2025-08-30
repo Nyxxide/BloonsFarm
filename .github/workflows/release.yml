@@ -27,6 +27,22 @@ jobs:
           submodules: false
           fetch-depth: 0
 
+      # Detect core count and set parallel build level
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       - name: Compute Qt commit for cache key (from tree)
         id: qthash
         shell: bash
@@ -83,10 +99,8 @@ jobs:
         run: |
           set -euo pipefail
           git submodule update --init --recursive vendor/qt
-          if [ ! -f vendor/qt/qtbase/CMakeLists.txt ]; then
-            if [ -f vendor/qt/init-repository ]; then
-              (cd vendor/qt && perl init-repository --module-subset=qtbase) || true
-            fi
+          if [ ! -f vendor/qt/qtbase/CMakeLists.txt ] && [ -f vendor/qt/init-repository ]; then
+            (cd vendor/qt && perl init-repository --module-subset=qtbase) || true
           fi
           test -f vendor/qt/qtbase/CMakeLists.txt
 
@@ -110,7 +124,7 @@ jobs:
 
       - name: Build & install Qt
         if: steps.cache-qt.outputs.cache-hit != 'true'
-        run: cmake --build superbuild/build-qt --target qtbase_static --config Release -j 4
+        run: cmake --build superbuild/build-qt --target qtbase_static --config Release --parallel
 
       # Canonicalize the Qt install path for downstream jobs
       - name: Move Qt install to canonical path • Linux/macOS
@@ -141,7 +155,8 @@ jobs:
             Write-Host "Qt prefix OK: $cfg"
           } else {
             Write-Host "Qt6Config.cmake not found. Tree:"
-            Get-ChildItem -Recurse -Depth 4 "$env:GITHUB_WORKSPACE\superbuild\build\_qt" | Select-Object FullName | Out-String -Width 200 | Write-Host
+            Get-ChildItem -Recurse -Depth 3 "$env:GITHUB_WORKSPACE\superbuild\build\_qt" |
+              Select-Object -ExpandProperty FullName | Select-Object -First 150 | ForEach-Object { Write-Host $_ }
             throw "Qt6Config.cmake not found."
           }
 
@@ -170,6 +185,22 @@ jobs:
         with:
           submodules: false
           fetch-depth: 0
+
+      # Detect core count and set parallel build level
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append
 
       - name: Compute OpenCV commit for cache key (from tree)
         id: ocvhash
@@ -203,8 +234,7 @@ jobs:
       - name: Install build tools (Windows)
         if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
         shell: pwsh
-        run: |
-          choco install ninja -y
+        run: choco install ninja -y
 
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
@@ -214,18 +244,18 @@ jobs:
 
       - name: "Init submodule: vendor/opencv (shallow)"
         if: steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: bash
         run: git submodule update --init --depth 1 vendor/opencv
 
-      # --- Windows: rebuild even on cache HIT if the package is missing ---
+      # Quick presence check of canonical locations (avoid deep scans)
       - name: Detect missing OpenCV package • Windows
         if: runner.os == 'Windows'
         id: ocvneed
         shell: pwsh
         run: |
-          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          $ok = (Test-Path (Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
-                (Test-Path (Join-Path $prefix "share\opencv4\OpenCVConfig.cmake")) -or
-                ([bool](Get-ChildItem -Path $prefix -Recurse -Filter OpenCVConfig.cmake -File -ErrorAction SilentlyContinue | Select-Object -First 1))
+          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $ok = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
+                (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
           if ($ok) { 'needs=no' | Out-File -Append $env:GITHUB_OUTPUT } else { 'needs=yes' | Out-File -Append $env:GITHUB_OUTPUT }
 
       # Configure & build OpenCV directly into _opencv
@@ -235,6 +265,7 @@ jobs:
           cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON \
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
@@ -248,6 +279,7 @@ jobs:
           cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_INSTALL_PREFIX="${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
+            -DCMAKE_INSTALL_LIBDIR=lib \
             -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON \
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
@@ -263,7 +295,8 @@ jobs:
         run: >
           cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/superbuild/build/_opencv"
+          -DCMAKE_INSTALL_LIBDIR=lib
           -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON
           -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
           -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF
@@ -274,47 +307,83 @@ jobs:
 
       - name: Build OpenCV
         if: (runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'yes') || (runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true')
-        run: cmake --build superbuild/ocv-src --config Release -j 4
+        run: cmake --build superbuild/ocv-src --config Release --parallel
 
       - name: Install OpenCV
         if: (runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'yes') || (runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true')
-        run: cmake --install superbuild/ocv-src --config Release
+        run: cmake --build superbuild/ocv-src --target install --config Release --parallel
 
-      # Normalize + fast-validate OpenCV package path on Windows
-      - name: Normalize/validate OpenCV prefix (cached or built) • Windows
-        if: runner.os == 'Windows'
-        timeout-minutes: 3
+      # If Windows cache HIT but package missing, do an emergency install now (no deep scans)
+      - name: Ensure OpenCV package exists (Windows emergency path)
+        if: runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'no'
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $ProgressPreference = 'SilentlyContinue'
+          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $hasPkg = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
+                    (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
+          if (-not $hasPkg) {
+            Write-Host "OpenCV package missing in cache; performing quick configure/install."
+            cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja `
+              -DCMAKE_BUILD_TYPE=Release `
+              -DCMAKE_INSTALL_PREFIX="$env:GITHUB_WORKSPACE/superbuild/build/_opencv" `
+              -DCMAKE_INSTALL_LIBDIR=lib `
+              -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON `
+              -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF `
+              -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF `
+              -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF `
+              -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON `
+              -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON `
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            cmake --build superbuild/ocv-src --config Release --parallel
+            cmake --build superbuild/ocv-src --target install --config Release --parallel
+          }
 
+      # Normalize via install manifest; no long recursive scans
+      - name: Normalize OpenCV CMake package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
           $prefix   = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
           $canonDir = Join-Path $prefix "lib\cmake\opencv4"
           $canonCfg = Join-Path $canonDir "OpenCVConfig.cmake"
 
-          # quick search for the file anywhere under prefix
-          $found = Get-ChildItem -Path $prefix -Recurse -Filter OpenCVConfig.cmake -File -ErrorAction SilentlyContinue |
-                   Select-Object -First 1
+          if (Test-Path $canonCfg) { Write-Host "Canonical package already in place."; exit 0 }
 
-          if (-not $found) {
-            Write-Host "OpenCVConfig.cmake not found by quick search."
-            Write-Host "Peek likely locations (first 200 entries only):"
-            Get-ChildItem -Path (Join-Path $prefix 'lib\cmake') -Recurse -Depth 3 -Force -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName | Select-Object -First 200 | ForEach-Object { Write-Host $_ }
-            Get-ChildItem -Path (Join-Path $prefix 'share') -Recurse -Depth 3 -Force -ErrorAction SilentlyContinue |
-              Select-Object -ExpandProperty FullName | Select-Object -First 200 | ForEach-Object { Write-Host $_ }
-            throw ("OpenCV CMake package not found anywhere under {0}" -f $prefix)
+          $manifest = Join-Path "$env:GITHUB_WORKSPACE\superbuild\ocv-src" "install_manifest.txt"
+          if (Test-Path $manifest) {
+            $line = Get-Content $manifest | Where-Object { $_ -match "OpenCVConfig\.cmake$" } | Select-Object -First 1
+            if ($line) {
+              $srcDir = Split-Path $line -Parent
+              New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
+              Copy-Item -Path (Join-Path $srcDir '*') -Destination $canonDir -Recurse -Force
+              Write-Host ("Normalized OpenCV package from {0} to {1}" -f $srcDir, $canonDir)
+              exit 0
+            }
           }
 
-          # normalize to lib\cmake\opencv4
-          if (-not (Test-Path $canonCfg)) {
-            $srcDir = Split-Path $found.FullName -Parent
+          # Fallback: check the two standard locations only (no deep recursion)
+          $std2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
+          if (Test-Path $std2) {
             New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
-            Copy-Item -Path (Join-Path $srcDir '*') -Destination $canonDir -Recurse -Force
-            Write-Host ("Copied OpenCV package from {0} to {1}" -f $srcDir, $canonDir)
+            Copy-Item -Path (Split-Path $std2 -Parent | Join-Path -ChildPath '*') -Destination $canonDir -Recurse -Force
+            Write-Host ("Copied from share/opencv4 to {0}" -f $canonDir)
+          }
+
+      - name: Validate OpenCV prefix (cached or built) • Windows
+        if: runner.os == 'Windows'
+        timeout-minutes: 1
+        shell: pwsh
+        run: |
+          $cfg = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv\lib\cmake\opencv4\OpenCVConfig.cmake"
+          if (Test-Path $cfg) {
+            Write-Host "OpenCV prefix OK: $cfg"
           } else {
-            Write-Host "Canonical OpenCV package already present: $canonCfg"
+            $alt = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv\share\opencv4\OpenCVConfig.cmake"
+            if (Test-Path $alt) {
+              Write-Host "OpenCV prefix OK (share path): $alt"
+            } else {
+              throw "OpenCVConfig.cmake not found in canonical locations."
+            }
           }
 
       - name: Validate OpenCV prefix (cached or built) • Linux/macOS
@@ -350,6 +419,22 @@ jobs:
           submodules: false
           fetch-depth: 0
 
+      # Detect core count and set parallel build level
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(nproc)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (macOS)
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$(sysctl -n hw.logicalcpu)" >> "$GITHUB_ENV"
+
+      - name: Set CMAKE_BUILD_PARALLEL_LEVEL (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: echo "CMAKE_BUILD_PARALLEL_LEVEL=$Env:NUMBER_OF_PROCESSORS" | Out-File -FilePath $env:GITHUB_ENV -Append
+
       # Restore both caches for consumption in this job
       - name: Compute Qt commit (from tree)
         id: qthash
@@ -383,11 +468,25 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      - name: "Init submodule: vendor/libuiohook (shallow, if present)"
+      # libuiohook submodule: use OS-appropriate shells
+      - name: "Init submodule: vendor/libuiohook (non-Windows)"
+        if: runner.os != 'Windows'
+        shell: bash
         run: |
           if [ -f .gitmodules ] && grep -q "vendor/libuiohook" .gitmodules; then
             git submodule update --init --depth 1 vendor/libuiohook
           fi
+
+      - name: "Init submodule: vendor/libuiohook (Windows)"
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          if (Test-Path ".gitmodules") {
+            $content = Get-Content ".gitmodules" -Raw
+            if ($content -match "vendor/libuiohook") {
+              git submodule update --init --depth 1 vendor/libuiohook
+            }
+          }
 
       - name: Install system deps (Linux)
         if: runner.os == 'Linux'
@@ -413,8 +512,7 @@ jobs:
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          choco install ninja -y
+        run: choco install ninja -y
 
       - name: Set up MSVC dev prompt (Windows)
         if: runner.os == 'Windows'
@@ -446,12 +544,12 @@ jobs:
 
       - name: Build app (Linux/macOS)
         if: runner.os != 'Windows'
-        run: cmake --build build -j 4
+        run: cmake --build build --parallel
 
       - name: Build app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cmake --build build --config Release -j 4
+        run: cmake --build build --config Release --parallel
 
       # -------- package per OS --------
       - name: Package (Linux)
