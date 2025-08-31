@@ -218,7 +218,45 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      # Only fetch & build if cache MISS
+      - name: "Init submodule: vendor/opencv (shallow)"
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: bash
+        run: git submodule update --init --depth 1 vendor/opencv
+
+      # --- NEW: purge any incompatible prebuilt Windows pack from cache ---
+      - name: Purge incompatible OpenCV Windows Pack (if present)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          if (-not (Test-Path $prefix)) { exit 0 }
+          $hasPackLayout = Test-Path (Join-Path $prefix "x64") -and `
+                           (Get-ChildItem -Path (Join-Path $prefix "x64") -Directory -Filter "vc*" -ErrorAction SilentlyContinue | Select-Object -First 1)
+          $cfg1 = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
+          $cfg2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
+          $hasPackMarker = $false
+          if (Test-Path $cfg1) { $txt = Get-Content $cfg1 -Raw -ErrorAction SilentlyContinue; if ($txt -match "OpenCV Windows Pack") { $hasPackMarker = $true } }
+          if (-not $hasPackMarker -and (Test-Path $cfg2)) { $txt = Get-Content $cfg2 -Raw -ErrorAction SilentlyContinue; if ($txt -match "OpenCV Windows Pack") { $hasPackMarker = $true } }
+          if ($hasPackLayout -or $hasPackMarker) {
+            Write-Host "Detected prebuilt 'OpenCV Windows Pack' in cache -> purging to avoid mismatch."
+            Remove-Item -Recurse -Force $prefix
+            New-Item -ItemType Directory -Force -Path $prefix | Out-Null
+          } else {
+            Write-Host "No incompatible Windows pack detected."
+          }
+
+      # Quick presence check of canonical locations (avoid deep scans)
+      - name: Detect missing OpenCV package • Windows
+        if: runner.os == 'Windows'
+        id: ocvneed
+        shell: pwsh
+        run: |
+          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $ok = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
+                (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
+          if ($ok) { 'needs=no' | Out-File -Append $env:GITHUB_OUTPUT } else { 'needs=yes' | Out-File -Append $env:GITHUB_OUTPUT }
+
+      # Configure & build OpenCV directly into _opencv
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -242,23 +280,6 @@ jobs:
         with:
           arch: x64
 
-      - name: "Init submodule: vendor/opencv (shallow)"
-        if: steps.cache-opencv.outputs.cache-hit != 'true'
-        shell: bash
-        run: git submodule update --init --depth 1 vendor/opencv
-
-      # Quick presence check of canonical locations (avoid deep scans)
-      - name: Detect missing OpenCV package • Windows
-        if: runner.os == 'Windows'
-        id: ocvneed
-        shell: pwsh
-        run: |
-          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          $ok = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
-                (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
-          if ($ok) { 'needs=no' | Out-File -Append $env:GITHUB_OUTPUT } else { 'needs=yes' | Out-File -Append $env:GITHUB_OUTPUT }
-
-      # Configure & build OpenCV directly into _opencv
       - name: Configure OpenCV (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -369,7 +390,6 @@ jobs:
 
           New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
           $srcUnix = $found -replace '\\','/'
-
           $shim = "# Auto-generated shim to canonicalize OpenCV package location.`ninclude(`"$srcUnix`")`n"
           Set-Content -Path $canonCfg -Value $shim -Encoding utf8
 
@@ -591,7 +611,7 @@ jobs:
           mkdir -p out
           if [ -d "build/BloonsFarm.app" ]; then
             /usr/bin/zip -r "out/BloonsFarm-macOS.zip" "build/BloonsFarm.app"
-          else
+          } else {
             BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
             if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
               echo "Could not locate app bundle or binary. Contents of build/:"; ls -lah build || true; exit 1
