@@ -218,45 +218,7 @@ jobs:
           restore-keys: |
             opencv-static-${{ runner.os }}-
 
-      - name: "Init submodule: vendor/opencv (shallow)"
-        if: steps.cache-opencv.outputs.cache-hit != 'true'
-        shell: bash
-        run: git submodule update --init --depth 1 vendor/opencv
-
-      # --- NEW: purge any incompatible prebuilt Windows pack from cache ---
-      - name: Purge incompatible OpenCV Windows Pack (if present)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          if (-not (Test-Path $prefix)) { exit 0 }
-          $hasPackLayout = Test-Path (Join-Path $prefix "x64") -and `
-                           (Get-ChildItem -Path (Join-Path $prefix "x64") -Directory -Filter "vc*" -ErrorAction SilentlyContinue | Select-Object -First 1)
-          $cfg1 = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
-          $cfg2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
-          $hasPackMarker = $false
-          if (Test-Path $cfg1) { $txt = Get-Content $cfg1 -Raw -ErrorAction SilentlyContinue; if ($txt -match "OpenCV Windows Pack") { $hasPackMarker = $true } }
-          if (-not $hasPackMarker -and (Test-Path $cfg2)) { $txt = Get-Content $cfg2 -Raw -ErrorAction SilentlyContinue; if ($txt -match "OpenCV Windows Pack") { $hasPackMarker = $true } }
-          if ($hasPackLayout -or $hasPackMarker) {
-            Write-Host "Detected prebuilt 'OpenCV Windows Pack' in cache -> purging to avoid mismatch."
-            Remove-Item -Recurse -Force $prefix
-            New-Item -ItemType Directory -Force -Path $prefix | Out-Null
-          } else {
-            Write-Host "No incompatible Windows pack detected."
-          }
-
-      # Quick presence check of canonical locations (avoid deep scans)
-      - name: Detect missing OpenCV package • Windows
-        if: runner.os == 'Windows'
-        id: ocvneed
-        shell: pwsh
-        run: |
-          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
-          $ok = (Test-Path (Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake")) -or
-                (Test-Path (Join-Path $p "share\opencv4\OpenCVConfig.cmake"))
-          if ($ok) { 'needs=no' | Out-File -Append $env:GITHUB_OUTPUT } else { 'needs=yes' | Out-File -Append $env:GITHUB_OUTPUT }
-
-      # Configure & build OpenCV directly into _opencv
+      # Only fetch & build if cache MISS
       - name: Install build tools / system deps (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -280,6 +242,24 @@ jobs:
         with:
           arch: x64
 
+      - name: "Init submodule: vendor/opencv (shallow)"
+        if: steps.cache-opencv.outputs.cache-hit != 'true'
+        shell: bash
+        run: git submodule update --init --depth 1 vendor/opencv
+
+      # Quick presence check of canonical locations (avoid deep scans)
+      - name: Detect missing OpenCV package • Windows
+        if: runner.os == 'Windows'
+        id: ocvneed
+        shell: pwsh
+        run: |
+          $p = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $cfg1 = Join-Path $p "lib\cmake\opencv4\OpenCVConfig.cmake"
+          $cfg2 = Join-Path $p "share\opencv4\OpenCVConfig.cmake"
+          $ok = (Test-Path $cfg1) -or (Test-Path $cfg2)
+          if ($ok) { 'needs=no' | Out-File -Append $env:GITHUB_OUTPUT } else { 'needs=yes' | Out-File -Append $env:GITHUB_OUTPUT }
+
+      # Configure & build OpenCV directly into _opencv
       - name: Configure OpenCV (Linux)
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
@@ -361,46 +341,30 @@ jobs:
             Write-Host "OpenCV CMake package already present."
           }
 
-      # Normalize: create a tiny shim instead of copying a whole tree
+      # Normalize: ensure the canonical path exists at lib\cmake\opencv4
       - name: Normalize OpenCV CMake package (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $ErrorActionPreference = "Stop"
-          $prefix   = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $prefix  = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
           $canonDir = Join-Path $prefix "lib\cmake\opencv4"
           $canonCfg = Join-Path $canonDir "OpenCVConfig.cmake"
 
-          if (Test-Path $canonCfg) { Write-Host "Canonical package already in place."; exit 0 }
-
-          $found = $null
-          $cand1 = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
-          $cand2 = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
-          if (Test-Path $cand1) { $found = $cand1 }
-          elseif (Test-Path $cand2) { $found = $cand2 }
-          else {
-            $tmp = Get-ChildItem -Path $prefix -Recurse -File -Filter "OpenCVConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
-            if ($tmp) { $found = $tmp.FullName }
+          if (Test-Path $canonCfg) {
+            Write-Host "Canonical package already in place."
+            exit 0
           }
 
-          if (-not $found) {
-            Write-Host "OpenCVConfig.cmake not found anywhere under $prefix"
+          $found = Get-ChildItem -Path $prefix -Recurse -File -Filter "OpenCVConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($found) {
+            $srcDir = Split-Path $found.FullName -Parent
+            New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
+            Copy-Item -Path (Join-Path $srcDir '*') -Destination $canonDir -Recurse -Force
+            Write-Host ("Normalized OpenCV package from {0} to {1}" -f $srcDir, $canonDir)
+          } else {
+            Write-Error "OpenCVConfig.cmake not found anywhere under $prefix"
             exit 1
           }
-
-          New-Item -ItemType Directory -Force -Path $canonDir | Out-Null
-          $srcUnix = $found -replace '\\','/'
-          $shim = "# Auto-generated shim to canonicalize OpenCV package location.`ninclude(`"$srcUnix`")`n"
-          Set-Content -Path $canonCfg -Value $shim -Encoding utf8
-
-          $verSrc = Join-Path (Split-Path $found) "OpenCVConfigVersion.cmake"
-          if (Test-Path $verSrc) {
-            $verUnix = $verSrc -replace '\\','/'
-            $shimVer = "# Auto-generated shim to canonicalize OpenCV package version.`ninclude(`"$verUnix`")`n"
-            Set-Content -Path (Join-Path $canonDir "OpenCVConfigVersion.cmake") -Value $shimVer -Encoding utf8
-          }
-
-          Write-Host "Wrote shim pointing to $srcUnix"
 
       - name: Validate OpenCV prefix (cached or built) • Windows
         if: runner.os == 'Windows'
@@ -611,7 +575,7 @@ jobs:
           mkdir -p out
           if [ -d "build/BloonsFarm.app" ]; then
             /usr/bin/zip -r "out/BloonsFarm-macOS.zip" "build/BloonsFarm.app"
-          } else {
+          else
             BIN="$(find build -maxdepth 3 -type f -name 'BloonsFarm*' | head -n 1 || true)"
             if [ -z "${BIN:-}" ] || [ ! -f "$BIN" ]; then
               echo "Could not locate app bundle or binary. Contents of build/:"; ls -lah build || true; exit 1
