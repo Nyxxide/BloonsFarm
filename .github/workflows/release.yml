@@ -223,13 +223,13 @@ jobs:
         if: runner.os == 'Linux' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build pkg-config build-essential libeigen3-dev libtbb-dev
+          sudo apt-get install -y ninja-build pkg-config build-essential libeigen3-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS' && steps.cache-opencv.outputs.cache-hit != 'true'
         run: |
           brew update
-          brew install ninja tbb eigen
+          brew install ninja eigen
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true'
@@ -270,7 +270,7 @@ jobs:
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
             -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF \
-            -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
+            -DWITH_TBB=OFF -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
             -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
 
       - name: Configure OpenCV (macOS arm64)
@@ -284,7 +284,7 @@ jobs:
             -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF \
             -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF \
             -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF \
-            -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
+            -DWITH_TBB=OFF -DWITH_OPENCL=ON -DWITH_EIGEN=ON \
             -DENABLE_FAST_MATH=ON -DWITH_OPENMP=OFF \
             -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=13.0 \
             -DENABLE_SSE=OFF -DENABLE_AVX=OFF -DCPU_BASELINE= -DCPU_DISPATCH= -DENABLE_NEON=ON
@@ -301,7 +301,7 @@ jobs:
           -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF
           -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF
           -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF
-          -DWITH_TBB=ON -DWITH_OPENCL=ON -DWITH_EIGEN=ON
+          -DWITH_TBB=OFF -DWITH_OPENCL=ON -DWITH_EIGEN=ON
           -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
 
@@ -312,6 +312,54 @@ jobs:
       - name: Install OpenCV
         if: (runner.os == 'Windows' && steps.ocvneed.outputs.needs == 'yes') || (runner.os != 'Windows' && steps.cache-opencv.outputs.cache-hit != 'true')
         run: cmake --build superbuild/ocv-src --target install --config Release --parallel
+
+      # If Windows cache HIT but package missing, do an emergency install now (no deep scans)
+      - name: Ensure OpenCV package exists (Windows emergency path)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $cfg1   = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
+          $cfg2   = Join-Path $prefix "share\opencv4\OpenCVConfig.cmake"
+          if (-not (Test-Path $cfg1) -and -not (Test-Path $cfg2)) {
+            Write-Host "OpenCV CMake package missing; performing quick configure/install."
+            cmake -S vendor/opencv -B superbuild/ocv-src -G Ninja `
+              -DCMAKE_BUILD_TYPE=Release `
+              -DCMAKE_INSTALL_PREFIX="$prefix" `
+              -DCMAKE_INSTALL_LIBDIR=lib `
+              -DBUILD_SHARED_LIBS=OFF -DBUILD_opencv_world=ON `
+              -DBUILD_TESTS=OFF -DBUILD_PERF_TESTS=OFF -DBUILD_EXAMPLES=OFF `
+              -DBUILD_opencv_python=OFF -DBUILD_opencv_apps=OFF `
+              -DWITH_IPP=OFF -DWITH_ITT=OFF -DWITH_IPP_A=OFF `
+              -DWITH_TBB=OFF -DWITH_OPENCL=ON -DWITH_EIGEN=ON `
+              -DENABLE_FAST_MATH=ON -DWITH_OPENMP=ON `
+              -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+            cmake --build superbuild/ocv-src --config Release --parallel
+            cmake --build superbuild/ocv-src --target install --config Release --parallel
+          } else {
+            Write-Host "OpenCV CMake package already present."
+          }
+
+      # Normalize: ensure the canonical path exists at lib\cmake\opencv4
+      - name: Normalize OpenCV CMake package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = "$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
+          $canon  = Join-Path $prefix "lib\cmake\opencv4\OpenCVConfig.cmake"
+          if (Test-Path $canon) { Write-Host "Canonical package already in place."; exit 0 }
+
+          $found = Get-ChildItem -Path $prefix -Recurse -Filter "OpenCVConfig.cmake" -ErrorAction SilentlyContinue | Select-Object -First 1
+          if ($found) {
+            $srcDir = Split-Path $found.FullName -Parent
+            $dstDir = Join-Path $prefix "lib\cmake\opencv4"
+            New-Item -ItemType Directory -Force -Path $dstDir | Out-Null
+            Copy-Item -Path (Join-Path $srcDir '*') -Destination $dstDir -Recurse -Force
+            Write-Host ("Normalized OpenCV package from {0} to {1}" -f $srcDir, $dstDir)
+          } else {
+            Write-Host "OpenCVConfig.cmake not found anywhere under $prefix"
+            exit 1
+          }
 
       - name: Validate OpenCV prefix (cached or built) • Windows
         if: runner.os == 'Windows'
@@ -446,13 +494,13 @@ jobs:
             libxkbcommon-dev libxkbcommon-x11-dev libgl1-mesa-dev \
             libfontconfig1-dev libfreetype6-dev libxcb-cursor-dev libxcb-xinput-dev \
             libxtst-dev libxkbfile-dev libxt-dev \
-            libeigen3-dev libtbb-dev
+            libeigen3-dev
 
       - name: Install build tools (macOS)
         if: runner.os == 'macOS'
         run: |
           brew update
-          brew install ninja tbb eigen
+          brew install ninja eigen
 
       - name: Install build tools (Windows)
         if: runner.os == 'Windows'
@@ -472,7 +520,7 @@ jobs:
         run: |
           cmake -S . -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt;${GITHUB_WORKSPACE}/superbuild/build/_opencv;/opt/homebrew" \
+            -DCMAKE_PREFIX_PATH="${GITHUB_WORKSPACE}/superbuild/build/_qt;${GITHUB_WORKSPACE}/superbuild/build/_opencv" \
             -DQt6_DIR="${GITHUB_WORKSPACE}/superbuild/build/_qt/lib/cmake/Qt6" \
             -DOpenCV_DIR="${GITHUB_WORKSPACE}/superbuild/build/_opencv/lib/cmake/opencv4"
 
@@ -559,7 +607,7 @@ jobs:
             exit 1
           fi
           BASE="$(sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' VERSION)"
-          BASE="${BASE#v}"                         # strip a leading v if present
+          BASE="${BASE#v}"
           echo "base=v${BASE}"        >> "$GITHUB_OUTPUT"
           echo "tag=v${BASE}-${GITHUB_RUN_NUMBER}" >> "$GITHUB_OUTPUT"
           echo "name=BloonsFarm v${BASE} (build ${GITHUB_RUN_NUMBER})" >> "$GITHUB_OUTPUT"
@@ -567,12 +615,12 @@ jobs:
       - name: Publish versioned release
         uses: ncipollo/release-action@v1
         with:
-          tag: ${{ steps.ver.outputs.tag }}             # vX.Y.Z-RUN
-          name: ${{ steps.ver.outputs.name }}           # nice display name
-          allowUpdates: true                            # append assets from other OS jobs
+          tag: ${{ steps.ver.outputs.tag }}
+          name: ${{ steps.ver.outputs.name }}
+          allowUpdates: true
           makeLatest: true
           prerelease: false
-          replacesArtifacts: false                      # keep assets; don't wipe on updates
+          replacesArtifacts: false
           omitBodyDuringUpdate: true
           omitNameDuringUpdate: true
           artifacts: "out/*"
