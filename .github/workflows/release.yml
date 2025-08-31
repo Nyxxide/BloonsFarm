@@ -529,12 +529,15 @@ jobs:
             -DQt6_DIR="${GITHUB_WORKSPACE}/superbuild/build/_qt/lib/cmake/Qt6" \
             -DOpenCV_DIR="${GITHUB_WORKSPACE}/superbuild/build/_opencv/lib/cmake/opencv4"
 
+      # FIX (Windows): use single-config Ninja + Release to match how OpenCV was built; also force static OpenCV
       - name: Configure app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
         run: >
-          cmake -S . -B build -G "Ninja Multi-Config"
+          cmake -S . -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
           -DCMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded
+          -DOpenCV_STATIC=ON
           -DCMAKE_PREFIX_PATH="$env:GITHUB_WORKSPACE\superbuild\build\_qt;$env:GITHUB_WORKSPACE\superbuild\build\_opencv"
           -DQt6_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_qt\lib\cmake\Qt6"
           -DOpenCV_DIR="$env:GITHUB_WORKSPACE\superbuild\build\_opencv\lib\cmake\opencv4"
@@ -544,10 +547,11 @@ jobs:
         if: runner.os != 'Windows'
         run: cmake --build build --parallel
 
+      # FIX (Windows): single-config Ninja; no --config flag
       - name: Build app (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cmake --build build --config Release --parallel
+        run: cmake --build build --parallel
 
       # -------- package per OS --------
       - name: Package (Linux)
