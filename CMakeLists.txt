@@ -24,20 +24,20 @@ endif()
 # Include directories
 # --------------------------------------------------
 include_directories(
-  include
-  include/jsonParser
+        include
+        include/jsonParser
 )
 
 # --------------------------------------------------
 # Source files
 # --------------------------------------------------
 set(SOURCES
-  src/main.cpp
-  src/CoordinateHandler.cpp
-  src/BloonsUIPopup.cpp
-  src/BloonsUICoords.cpp
-  src/BloonsUIMain.cpp
-  src/ScreenGrabber.cpp
+        src/main.cpp
+        src/CoordinateHandler.cpp
+        src/BloonsUIPopup.cpp
+        src/BloonsUICoords.cpp
+        src/BloonsUIMain.cpp
+        src/ScreenGrabber.cpp
 )
 
 # --------------------------------------------------
@@ -62,9 +62,9 @@ if (WIN32)
   file(TO_CMAKE_PATH "${APP_ICON_FILE}" APP_ICON_FILE)
   set(GENERATED_RC "${CMAKE_CURRENT_BINARY_DIR}/appicon.rc")
   configure_file(
-    "${CMAKE_SOURCE_DIR}/resources/appicon.rc.in"
-    "${GENERATED_RC}"
-    @ONLY
+          "${CMAKE_SOURCE_DIR}/resources/appicon.rc.in"
+          "${GENERATED_RC}"
+          @ONLY
   )
   target_sources(BloonsFarm PRIVATE "${GENERATED_RC}")
 endif()
@@ -76,16 +76,16 @@ set(RESOURCE_DIR "${CMAKE_SOURCE_DIR}/resources")
 set(GENERATED_QRC "${CMAKE_BINARY_DIR}/resources.qrc")
 
 file(GLOB_RECURSE RESOURCE_DEPS CONFIGURE_DEPENDS
-  "${RESOURCE_DIR}/*.*")
+        "${RESOURCE_DIR}/*.*")
 
 add_custom_command(
-  OUTPUT  ${GENERATED_QRC}
-  COMMAND ${CMAKE_COMMAND} -DRESOURCE_DIR=${RESOURCE_DIR}
-                           -DOUTPUT_QRC=${GENERATED_QRC}
-                           -P ${CMAKE_SOURCE_DIR}/cmake/generate_qrc.cmake
-  DEPENDS ${RESOURCE_DEPS}
-  COMMENT "Generating resources.qrc"
-  VERBATIM
+        OUTPUT  ${GENERATED_QRC}
+        COMMAND ${CMAKE_COMMAND} -DRESOURCE_DIR=${RESOURCE_DIR}
+        -DOUTPUT_QRC=${GENERATED_QRC}
+        -P ${CMAKE_SOURCE_DIR}/cmake/generate_qrc.cmake
+        DEPENDS ${RESOURCE_DEPS}
+        COMMENT "Generating resources.qrc"
+        VERBATIM
 )
 
 set_source_files_properties(${GENERATED_QRC} PROPERTIES GENERATED TRUE)
@@ -102,19 +102,19 @@ if (WIN32)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE uiohook)
 elseif (APPLE)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-    uiohook
-    "-framework CoreFoundation"
-    "-framework CoreGraphics"
+          uiohook
+          "-framework CoreFoundation"
+          "-framework CoreGraphics"
   )
 elseif (UNIX)
   target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-    uiohook
-    X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
+          uiohook
+          X11 Xtst xcb xkbcommon xkbcommon-x11 Xinerama Xt X11-xcb Xext Xrandr
   )
 endif()
 
 # --------------------------------------------------
-# OpenCV + Eigen + TBB
+# OpenCV + Eigen (no TBB)
 # --------------------------------------------------
 # Eigen: header-only. Required on UNIX/APPLE; quiet on Windows to avoid spurious failures.
 if(WIN32)
@@ -137,33 +137,42 @@ elseif (TARGET OpenCV::opencv_world)
 elseif (TARGET opencv_core OR TARGET OpenCV::opencv_core)
   if (TARGET opencv_core)
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-      opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs)
+            opencv_core opencv_imgproc opencv_highgui opencv_imgcodecs)
   else()
     target_link_libraries(${CMAKE_PROJECT_NAME} PRIVATE
-      OpenCV::opencv_core OpenCV::opencv_imgproc OpenCV::opencv_highgui OpenCV::opencv_imgcodecs)
+            OpenCV::opencv_core OpenCV::opencv_imgproc OpenCV::opencv_highgui OpenCV::opencv_imgcodecs)
   endif()
 else()
   message(FATAL_ERROR "OpenCV targets not found. Check OpenCV_DIR / CMAKE_PREFIX_PATH.")
 endif()
 
-# TBB: OpenCV may add a raw -ltbb on *nix/mac; make sure it's resolvable.
-if(APPLE)
-  find_package(TBB REQUIRED)                         # we brew install tbb in CI
-  target_link_libraries(BloonsFarm PRIVATE TBB::tbb)
-  # Ensure the stray '-ltbb' from OpenCV can be resolved by ld.
-  if(EXISTS "/opt/homebrew/lib")
-    target_link_directories(BloonsFarm PRIVATE /opt/homebrew/lib)
-  elseif(EXISTS "/usr/local/lib")
-    target_link_directories(BloonsFarm PRIVATE /usr/local/lib)
-  endif()
-elseif(UNIX)  # Linux
-  find_package(TBB QUIET)                           # libtbb-dev provides the libs; config may or may not exist
-  if(TARGET TBB::tbb)
-    target_link_libraries(BloonsFarm PRIVATE TBB::tbb)
+# --- Guardrail: fail fast if the OpenCV you linked was built with TBB ---
+# This prevents shipping a binary that requires libtbb.{dylib,so} at runtime.
+set(_cv_tgt "")
+if (TARGET OpenCV::opencv_world)
+  set(_cv_tgt OpenCV::opencv_world)
+elseif (TARGET opencv_world)
+  set(_cv_tgt opencv_world)
+elseif (TARGET OpenCV::opencv_core)
+  set(_cv_tgt OpenCV::opencv_core)
+elseif (TARGET opencv_core)
+  set(_cv_tgt opencv_core)
+endif()
+
+if (_cv_tgt)
+  get_target_property(_cv_iface ${_cv_tgt} INTERFACE_LINK_LIBRARIES)
+  if(_cv_iface)
+    string(REPLACE ";" " " _cv_iface_str "${_cv_iface}")
+    if (_cv_iface_str MATCHES "(^|[ ;])tbb([ ;]|$)")
+      message(FATAL_ERROR
+              "This OpenCV was built with TBB and exports a link dependency on 'tbb'. "
+              "Your project intentionally ships without TBB. Rebuild OpenCV with -DWITH_TBB=OFF "
+              "or bundle TBB with your app.")
+    endif()
   endif()
 endif()
 
 # Optional: put binary in /build
 set_target_properties(${CMAKE_PROJECT_NAME} PROPERTIES
-  RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
+        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}"
 )
