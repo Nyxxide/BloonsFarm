@@ -418,6 +418,11 @@ void BloonsUIMain::farmLoop() {
 
 }
 
+#if defined(__APPLE__)
+extern "C" bool BF_EnsureScreenCapturePermission();
+extern "C" void BF_RunFarmLoopWithAutorelease(class BloonsUIMain*);
+#endif
+
 void BloonsUIMain::startLoop() {
     for(const auto& button : farmButtonList){
         button->hide();
@@ -435,9 +440,23 @@ void BloonsUIMain::startLoop() {
         transform(activeFile.begin(), activeFile.end(), activeFile.begin(), ::tolower);
     }
 
+#if defined(__APPLE__)
+    if (!BF_EnsureScreenCapturePermission()) {
+        QMessageBox::warning(nullptr, "Permission needed",
+            "Screen Recording permission is required.\n"
+            "Enable it in System Settings → Privacy & Security → Screen Recording,\n"
+            "then relaunch the app.");
+        return;
+    }
+#endif
+
     running = true;
 
-    loopThread = std::thread([this] {farmLoop();});
+#if defined(__APPLE__)
+    loopThread = std::thread(BF_RunFarmLoopWithAutorelease, this);
+#else
+    loopThread = std::thread([this]{ farmLoop(); });
+#endif
 }
 
 void BloonsUIMain::endLoop() {

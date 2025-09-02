@@ -10,6 +10,10 @@ endif()
 
 project(BloonsFarm LANGUAGES C CXX)
 
+if(APPLE)
+  enable_language(OBJCXX)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -49,6 +53,16 @@ if(WIN32)
   qt_add_executable(BloonsFarm WIN32 ${SOURCES})
 else()
   qt_add_executable(BloonsFarm ${SOURCES})
+endif()
+
+if(APPLE)
+  target_sources(BloonsFarm PRIVATE resources/FarmLoopShim_mac.mm)
+
+  target_include_directories(BloonsFarm PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
+  find_library(COREGRAPHICS_FRAMEWORK CoreGraphics)
+  find_library(FOUNDATION_FRAMEWORK   Foundation)
+  target_link_libraries(BloonsFarm PRIVATE ${FOUNDATION_FRAMEWORK} ${COREGRAPHICS_FRAMEWORK})
 endif()
 
 # Windows: force-enable std::byte on MSVC
