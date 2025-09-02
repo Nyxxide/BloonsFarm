@@ -1,8 +1,23 @@
 // FarmLoopShim_mac.mm
+
 #if defined(__APPLE__)
+
+#include "../include/BloonsUIMain.h"
+
+#if defined(__OBJC__)
+#pragma push_macro("NO")
+#pragma push_macro("YES")
+#undef NO
+#undef YES
+#endif
+
 #import <Foundation/Foundation.h>
 #import <CoreGraphics/CoreGraphics.h>
-#include "../include/BloonsUIMain.h"   // <-- include your class so self->farmLoop() is known
+
+#if defined(__OBJC__)
+#pragma pop_macro("YES")
+#pragma pop_macro("NO")
+#endif
 
 extern "C" bool BF_EnsureScreenCapturePermission() {
     if (@available(macOS 10.15, *)) {

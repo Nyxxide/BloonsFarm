@@ -21,6 +21,7 @@
 #include <QFontDatabase>
 #include <QLabel>
 #include <QMenuBar>
+#include <QMessageBox>
 
 #include "BloonsUIPopup.h"
 #include "BloonsUICoords.h"
