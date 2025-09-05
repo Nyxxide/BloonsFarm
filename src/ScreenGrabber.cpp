@@ -59,46 +59,65 @@ cv::Mat ScreenGrabber::grabScreen()
 
 #elif defined(__APPLE__)                                         /* macOS */
 #include <CoreGraphics/CoreGraphics.h>
+#include <cmath>
 
 cv::Mat ScreenGrabber::grabScreen()
 {
-    // Capture the whole main display. Returns null if screen-recording permission missing.
-    CGImageRef img = CGDisplayCreateImage(kCGDirectMainDisplay);
+    // Capture visible content of the main display in *backing pixels* (Retina = 2x).
+    CGDirectDisplayID display = kCGDirectMainDisplay;
+    CGImageRef img = CGDisplayCreateImage(display);
     if (!img) return {};
 
-    const size_t w = CGImageGetWidth(img);
-    const size_t h = CGImageGetHeight(img);
-    if (w == 0 || h == 0) { CGImageRelease(img); return {}; }
+    const size_t wpx = CGImageGetWidth(img);
+    const size_t hpx = CGImageGetHeight(img);
+    if (wpx == 0 || hpx == 0) { CGImageRelease(img); return {}; }
 
-    // Allocate our own pixel buffer (BGRA 8-bit)
-    cv::Mat bgra((int)h, (int)w, CV_8UC4);
+    // Render into our own BGRA buffer so we control lifetime.
+    cv::Mat bgra((int)hpx, (int)wpx, CV_8UC4);
 
-    // Create a bitmap context that writes directly into our cv::Mat
-    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();                 // CREATE → must release
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB(); // CREATE → release
     if (!cs) { CGImageRelease(img); return {}; }
 
-    CGContextRef ctx = CGBitmapContextCreate(                           // CREATE → must release
-        bgra.data, w, h, 8, (size_t)bgra.step[0], cs,
-        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);  // BGRA on little-endian
-
+    CGContextRef ctx = CGBitmapContextCreate(
+        bgra.data, wpx, hpx, 8, (size_t)bgra.step[0], cs,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst); // BGRA on little-endian
     if (!ctx) {
         CGColorSpaceRelease(cs);
         CGImageRelease(img);
         return {};
     }
 
-    // Draw CGImage into our buffer
-    CGContextDrawImage(ctx, CGRectMake(0, 0, (CGFloat)w, (CGFloat)h), img);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, (CGFloat)wpx, (CGFloat)hpx), img);
 
-    // Release ONLY what we created
     CGContextRelease(ctx);
     CGColorSpaceRelease(cs);
     CGImageRelease(img);
 
-    // Convert to BGR if your downstream expects 3-channel OpenCV images
+    // ---- Normalize Retina scaling to 1× so templates match size ----
+    // CGDisplayBounds returns logical "points". scale ≈ backingPixels / points.
+    CGRect bounds = CGDisplayBounds(display);
+    const double pw = (double)CGRectGetWidth(bounds);
+    const double ph = (double)CGRectGetHeight(bounds);
+    double scale = 1.0;
+    if (pw > 0.0 && ph > 0.0) {
+        const double sx = (double)wpx / pw;
+        const double sy = (double)hpx / ph;
+        scale = std::max(sx, sy); // typically 2.0 on Retina
+    }
+
+    if (scale > 1.01) {
+        cv::Mat bgra1x;
+        cv::resize(bgra, bgra1x,
+                   cv::Size((int)std::lround(bgra.cols / scale),
+                            (int)std::lround(bgra.rows / scale)),
+                   0, 0, cv::INTER_AREA);
+        bgra = std::move(bgra1x);
+    }
+
+    // Convert to BGR (to match your Windows/Linux pipeline)
     cv::Mat bgr;
     cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
-    return bgr;   // or return bgra if you want to keep alpha
+    return bgr;
 }
 
 #else                                                            /* Unsupported */
