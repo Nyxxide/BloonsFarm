@@ -58,25 +58,48 @@ cv::Mat ScreenGrabber::grabScreen()
 }
 
 #elif defined(__APPLE__)                                         /* macOS */
-#include <ApplicationServices/ApplicationServices.h>
+#include <CoreGraphics/CoreGraphics.h>
 
-    cv::Mat ScreenGrabber::grabScreen()
-    {
-        CGImageRef img = CGDisplayCreateImage(CGMainDisplayID());
-        if (!img) return {};
+cv::Mat ScreenGrabber::grabScreen()
+{
+    // Capture the whole main display. Returns null if screen-recording permission missing.
+    CGImageRef img = CGDisplayCreateImage(kCGDirectMainDisplay);
+    if (!img) return {};
 
-        size_t w = CGImageGetWidth(img);
-        size_t h = CGImageGetHeight(img);
+    const size_t w = CGImageGetWidth(img);
+    const size_t h = CGImageGetHeight(img);
+    if (w == 0 || h == 0) { CGImageRelease(img); return {}; }
 
-        const void* buf = CFDataGetBytePtr(CGDataProviderCopyData(CGImageGetDataProvider(img)));
-        cv::Mat rgba(h, w, CV_8UC4, const_cast<void*>(buf));
-        cv::Mat bgr;  cv::cvtColor(rgba, bgr, cv::COLOR_RGBA2BGR);
-        cv::Mat copy = bgr.clone();
+    // Allocate our own pixel buffer (BGRA 8-bit)
+    cv::Mat bgra((int)h, (int)w, CV_8UC4);
 
+    // Create a bitmap context that writes directly into our cv::Mat
+    CGColorSpaceRef cs = CGColorSpaceCreateDeviceRGB();                 // CREATE → must release
+    if (!cs) { CGImageRelease(img); return {}; }
+
+    CGContextRef ctx = CGBitmapContextCreate(                           // CREATE → must release
+        bgra.data, w, h, 8, (size_t)bgra.step[0], cs,
+        kCGBitmapByteOrder32Little | kCGImageAlphaPremultipliedFirst);  // BGRA on little-endian
+
+    if (!ctx) {
+        CGColorSpaceRelease(cs);
         CGImageRelease(img);
-        CFRelease(buf);
-        return copy;
+        return {};
     }
+
+    // Draw CGImage into our buffer
+    CGContextDrawImage(ctx, CGRectMake(0, 0, (CGFloat)w, (CGFloat)h), img);
+
+    // Release ONLY what we created
+    CGContextRelease(ctx);
+    CGColorSpaceRelease(cs);
+    CGImageRelease(img);
+
+    // Convert to BGR if your downstream expects 3-channel OpenCV images
+    cv::Mat bgr;
+    cv::cvtColor(bgra, bgr, cv::COLOR_BGRA2BGR);
+    return bgr;   // or return bgra if you want to keep alpha
+}
 
 #else                                                            /* Unsupported */
     cv::Mat ScreenGrabber::grabScreen() { return {}; }
